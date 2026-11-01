@@ -1,0 +1,47 @@
+# Android Starter · Andrea Catino — Independent Researcher, Italy · 2026-11-01 18:10
+# A ogni push su main: compila l'APK e lo pubblica in Releases.
+# Link fisso all'ultimo APK:
+#   https://github.com/<utente>/<repo>/releases/latest/download/app-debug.apk
+
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Compila APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --stacktrace
+          cp app/build/outputs/apk/debug/app-debug.apk app-debug.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: app-debug.apk
+
+      - name: Pubblica in Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Build ${{ github.run_number }}
+          body: ${{ github.event.head_commit.message }}
+          files: app-debug.apk
+          make_latest: true
