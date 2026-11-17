@@ -58,3 +58,21 @@ Chromium headless, fotocamera sostituita da un flusso di canvas che alterna 4 fo
 4. Prova con illuminatore IR (850/940 nm): i filtri volto sono pensati per la luce del giorno; di notte resta il filtro notte.
 
 Script: `test/` (vedi intestazioni). La parità si rilancia con `make_cases.py` → `run_engine.js` (gpu|cpu) → `parity.py`.
+
+## 5. Versione 0.10.1 (frequenza e cadenza)
+
+Pagina completa in Chromium headless, fotocamera simulata 720×960 a 20 FPS, elaborazione a 360×480, rilevatore MediaPipe su CPU (~46 ms).
+
+| Prova | Esito |
+|---|---|
+| Minimo 20 FPS accettato | richiesta `{ideal:30, min:20, max:30}`, avvio regolare |
+| Minimo rifiutato (`OverconstrainedError` simulato) | seconda richiesta senza minimo, avvio regolare, evento registrato |
+| Patch occhi nativa con elaborazione a 360 px | livelli pupilla/iride/sclera misurati, potenziamento a 0,7 |
+| Prova occhi con cadenza 2× | volto rilevato 98 % / 100 % (aperti/chiusi) in A e B: i fotogrammi senza rilevamento non abbassano più le percentuali |
+| Prove A/B 2× e 1× | «landmark più stabili con il filtro» in entrambe |
+| Errori JavaScript | 0 |
+
+Frequenze misurate (contatore corretto): 2× → 8–10 FPS e 4,1 rilevamenti/s; 1× → 7,5 FPS e 7,2 rilevamenti/s.
+In questo ambiente il rilevatore è lento e la cadenza 2× aumenta gli FPS ma **riduce** i rilevamenti al secondo. Per questo 1× è il valore predefinito. Sul telefono (rilevatore ~43 ms, fotocamera a 20–30 FPS) il confronto va rifatto guardando «ril/s»: la cadenza 2× aumenta i fotogrammi mostrati, non le misure degli occhi.
+
+Il contatore FPS della 0.9.3/0.10.0 faceva la media delle frequenze istantanee: con intervalli alterni lunghi e brevi sovrastimava (17 FPS mostrati contro ~11 reali). Nella 0.10.1 fa la media degli intervalli.

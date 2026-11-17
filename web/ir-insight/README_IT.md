@@ -1,10 +1,10 @@
-# IR InSight Software 0.10.0 — filtri volto per il DMS
+# IR InSight Software 0.10.1 — filtri volto per il DMS
 
 Banco di prova nel browser (telefono o PC) per i filtri d'immagine del Driver Monitoring System.
 La 0.10.0 aggiunge alla 0.9.3 due **filtri volto di giorno** e un **potenziamento degli occhi**,
 pensati per far arrivare al riconoscimento facciale un volto netto, con palpebre, iride e pupilla distinguibili.
 
-File principale: `IR_InSight_Software_0_10_0.html` (pagina unica, nessuna installazione).
+File principale: `IR_InSight_Software_0_10_1.html` (la 0.10.0 resta per confronto) (pagina unica, nessuna installazione).
 Va aperta via HTTPS o `localhost` per avere la fotocamera. Il rilevatore MediaPipe si scarica alla prima apertura (circa 13 MB).
 
 ## I due filtri
@@ -44,6 +44,12 @@ Livelli: nessuno / leggero / normale (predefinito) / forte. Se il volto sparisce
 La vista **«Filtrata + zoom occhi»** mostra i due occhi ingranditi, grezzi sopra e filtrati sotto.
 
 Nota: per «papilla» ho inteso la **palpebra** (bordo palpebrale e piega), che è la struttura usata dal DMS per apertura/chiusura.
+
+## Frequenza e cadenza (0.10.1)
+
+- La fotocamera si apre chiedendo almeno 20 FPS con esposizione automatica; se il telefono non lo accetta si apre senza minimo.
+- L'esposizione non viene mai messa in manuale: resta il controllo automatico e i filtri lavorano su immagini non bruciate.
+- «Rilevatore: ogni fotogramma (1×)» dà più misure degli occhi al secondo; «un fotogramma su 2 (2×)» dà più FPS ma riusa i landmark nei fotogrammi intermedi. Il badge mostra «FPS · ril/s»: per il DMS conta il secondo numero.
 
 ## Integrazione nel DMS
 
