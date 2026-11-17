@@ -1,0 +1,2138 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>IR InSight Software 0.10.1</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1118;--panel:#131e29;--line:#2b3a49;--txt:#e8f0f7;--muted:#9fb0c0;--accent:#68c7c0;--raw:#ffb86b;--flt:#68c7c0}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:15px system-ui,Arial}
+main{max-width:980px;margin:auto;padding:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:13px;margin:10px 0}
+h1{font-size:21px;margin:4px 0}h2{font-size:16px;margin:0 0 9px}
+.muted,small{color:var(--muted)}
+button,select,input[type=text]{font:inherit;background:#203142;color:var(--txt);border:1px solid #40566b;border-radius:9px;padding:10px}
+button.primary{background:#17665f;border-color:#278c83}
+button.danger{background:#5a2a2a;border-color:#8c4a3f}
+button:disabled,select:disabled,input:disabled{opacity:.45}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row>*{flex:1;min-width:110px}.row>select,.row>input{min-width:170px}
+label{display:block;color:var(--muted);font-size:13px;margin:9px 0 3px}
+input[type=range]{width:100%}
+.preview{background:#000;border-radius:9px;overflow:hidden;position:relative}
+.preview canvas{display:block;width:100%;max-height:70vh;object-fit:contain}
+.badges{position:absolute;left:6px;top:6px;right:6px;display:flex;gap:5px;flex-wrap:wrap;pointer-events:none}
+.badge{background:rgba(8,16,24,.78);border:1px solid var(--line);border-radius:20px;padding:2px 8px;font-size:11px;font-variant-numeric:tabular-nums}
+.badge.on{border-color:#278c83;color:#8be0ba}.badge.off{color:#ffd28b}
+#video{position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none}
+.status{background:#0b151e;padding:9px;border-radius:8px;margin-top:8px}
+.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.metric{background:#0c151e;border:1px solid var(--line);border-radius:8px;padding:8px}
+.metric b{display:block;font-size:18px;font-variant-numeric:tabular-nums}.metric span{font-size:11px;color:var(--muted)}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#081018;padding:9px;border-radius:8px;max-height:220px;overflow:auto;font-size:12px}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{padding:7px 6px;border-bottom:1px solid var(--line);text-align:right}
+th:first-child,td:first-child{text-align:left;color:var(--muted);font-weight:400}
+th{font-size:12px}th.a{color:var(--raw)}th.b{color:var(--flt)}
+.warn{color:#ffd28b}.ok{color:#8be0ba}.bad{color:#ff9a8b}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+h3{font-size:13px;margin:12px 0 2px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+/* Illuminatore visibile di prova: fascia rossa indipendente dal flusso video. */
+#redIllumination{position:fixed;left:0;right:0;bottom:env(safe-area-inset-bottom,0px);width:100vw;height:var(--redH,2cm);background:var(--redC,#ff0000);display:none;z-index:2147483000;pointer-events:none;opacity:1}
+body.red-illumination-on{padding-bottom:calc(var(--redH,2cm) + env(safe-area-inset-bottom,0px) + 12px)}
+.ind{display:flex;gap:10px;align-items:flex-start;margin:8px 0}.ind b{font-size:15px}
+.dot{width:16px;height:16px;border-radius:50%;background:#40566b;flex:0 0 16px;margin-top:2px}.dot.ok{background:#3fbf8a}.dot.warn{background:#e6b450}.dot.bad{background:#e0645a}
+.badge.bad{color:#ff9a8b;border-color:#8c4a3f}
+.red-test-note{font-size:12px;color:var(--muted);line-height:1.45;margin-top:8px}
+@media(max-width:560px){main{padding:8px}.metrics{grid-template-columns:repeat(2,1fr)}.cols{grid-template-columns:1fr}}
+</style></head><body><main>
+<h1>IR InSight Software 0.10.1</h1>
+<div class="muted">Filtri volto per controluce e luce puntata, con potenziamento di palpebre, iride e pupilla · filtro notte · fascia rossa · elaborazione su GPU</div>
+
+<div class="card">
+  <div class="row"><button id="start" class="primary">Avvia fotocamera</button><button id="stop">Arresta</button>
+    <select id="facing"><option value="user">Fotocamera frontale</option><option value="environment">Fotocamera posteriore</option></select>
+    <select id="engineSel"><option value="gpu">Motore GPU (veloce)</option><option value="cpu">Motore CPU (riserva)</option></select></div>
+  <div id="status" class="status">In attesa. Aprire tramite HTTPS o localhost.</div>
+</div>
+
+<div class="card" id="redLightCard">
+  <h2>Posizione e luce</h2>
+  <div class="ind"><span id="posDot" class="dot"></span><div><b id="posTitle">Posizione: in attesa del volto</b><div id="posHint" class="muted">Avvia la fotocamera: il controllo parte quando il rilevatore trova il volto.</div></div></div>
+  <div class="ind"><span id="lightDot" class="dot"></span><div><b id="lightTitle">Luce sul volto: —</b><div id="lightHint" class="muted">—</div></div></div>
+  <div id="posVals" class="muted" style="font-size:12px">Rotazione — · inclinazione — · piega — · larghezza volto —</div>
+  <h3>Fascia rossa</h3>
+  <div class="row"><button id="redIlluminationToggle" class="primary" type="button" aria-pressed="false">Attiva fascia rossa</button>
+    <select id="redH" aria-label="Altezza della fascia"><option value="2" selected>Altezza 2 cm</option><option value="3">Altezza 3 cm</option><option value="4">Altezza 4 cm</option><option value="5">Altezza 5 cm</option></select>
+    <select id="redK" aria-label="Intensità della fascia"><option value="1" selected>Rosso pieno</option><option value="0.75">Rosso 75%</option><option value="0.5">Rosso 50%</option></select></div>
+  <div class="row" style="margin-top:8px">
+    <select id="redAuto" aria-label="Regolazione della fascia"><option value="off" selected>Fascia: manuale</option><option value="on">Fascia: automatica</option></select>
+    <select id="lightTarget" aria-label="Luce minima sul volto"><option value="25">Luce minima 25</option><option value="30" selected>Luce minima 30</option><option value="40">Luce minima 40</option></select></div>
+  <div id="redIlluminationState" class="status">Spenta · nessuna luce aggiuntiva</div>
+  <div class="red-test-note">La pagina non può cambiare la luminosità del display del telefono: l'indicatore della luce dice quando alzarla o abbassarla. Può invece regolare la fascia rossa, in altezza e intensità: in «manuale» la regoli tu seguendo l'indicatore, in «automatica» l'applicazione ne cambia l'altezza da sola. «Luce minima» è il livello sotto il quale l'indicatore chiede più luce (30 consigliato). Non serve la luminosità massima: nelle prove gli occhi si leggevano con la luce sul volto intorno a 40.</div>
+</div>
+</div>
+
+<div class="card"><h2>Anteprima</h2>
+  <div class="preview"><canvas id="view" width="960" height="640"></canvas>
+    <div class="badges"><span id="bState" class="badge">filtro —</span><span id="bFps" class="badge">— FPS</span><span id="bMs" class="badge">— ms</span><span id="bPos" class="badge">posizione —</span><span id="bLight" class="badge">luce —</span><span id="bGain" class="badge">guadagno —</span><span id="bProf" class="badge">profilo —</span></div></div>
+  <div class="row" style="margin-top:8px">
+    <select id="viewMode"><option value="side">Affiancate: grezza | filtrata</option><option value="sidebw">Affiancate, filtrata schiarita in B/N (solo per la vista)</option><option value="flt">Filtrata</option><option value="eyes">Filtrata + zoom occhi (sopra grezza, sotto filtrata)</option><option value="fltbw">Filtrata schiarita in B/N (solo per la vista)</option><option value="raw">Grezza</option><option value="gain">Solo guadagno (senza riduzione rumore)</option><option value="mask">Mappa hotspot</option></select>
+    <select id="procW"><option value="360">Lato corto 360 px</option><option value="480" selected>Lato corto 480 px</option><option value="640">Lato corto 640 px</option></select>
+  </div>
+  <div class="row" style="margin-top:8px"><button id="save">Salva immagine</button><button id="snapshot">Registra campione</button><button id="freeze">Blocca fotogramma</button></div>
+  <small>Il filtro produce un fotogramma separato: il flusso grezzo resta intatto e disponibile per il confronto. Le viste «schiarita in B/N» cambiano solo ciò che vedi: al rilevatore arriva sempre l'immagine filtrata naturale, che nelle prove funziona meglio di quella schiarita.</small>
+</div>
+
+<div class="card"><h2>Filtri volto: controluce e luce puntata</h2>
+  <div class="row">
+    <select id="flProfile" aria-label="Profilo del filtro volto"><option value="auto" selected>Profilo: automatico (controluce / luce puntata / normale)</option><option value="back">Profilo: controluce</option><option value="spot">Profilo: luce puntata sul volto</option><option value="neutral">Profilo: luce normale</option><option value="classic">Profilo: classico 0.9.3 (livelli + CLAHE)</option></select>
+    <select id="eyeBoost" aria-label="Potenziamento degli occhi"><option value="0">Occhi: nessun potenziamento</option><option value="0.45">Occhi: potenziamento leggero</option><option value="0.7" selected>Occhi: potenziamento normale</option><option value="1">Occhi: potenziamento forte</option></select>
+  </div>
+  <label>Intensità del filtro volto <b id="flStrengthV">1.00</b></label>
+  <input id="flStrength" type="range" min="0" max="1.5" step="0.05" value="1">
+  <div id="flNote" class="status">Il profilo si sceglie da solo; il potenziamento degli occhi parte quando il rilevatore trova il volto.</div>
+  <div class="red-test-note"><b>Controluce</b>: toglie il velo del flare (sole nell'inquadratura), porta il volto a una luminosità piena e comprime cielo e sfondo, senza aloni sul contorno della testa. <b>Luce puntata</b>: comprime le luci bruciate di fronte e naso e schiarisce le ombre dure (orbite, ombra del naso). <b>Occhi</b>: con i landmark del rilevatore misura pupilla, iride, sclera e pelle delle palpebre e ne allarga le differenze; la pelle della palpebra resta al suo livello, così un occhio chiuso non diventa mai «aperto». Di notte i filtri volto si spengono con continuità e resta il filtro notte. La vista «zoom occhi» mostra gli occhi ingranditi, grezzi e filtrati.</div>
+</div>
+
+<div class="card"><h2>Automatico</h2>
+  <div id="pilot" class="status" style="margin-top:0">Alla partenza tutto si regola da solo: filtro giorno/notte, misura sul volto, esposizione, frequenza e rilevatore.</div>
+  <div id="pilotLog" class="muted" style="font-size:12px;margin-top:6px">Nessun intervento automatico finora.</div>
+  <div class="row" style="margin-top:8px">
+    <select id="autoEV"><option value="on">Esposizione: automatica</option><option value="off">Esposizione: manuale</option></select>
+    <select id="autoFps"><option value="on">Frequenza: automatica</option><option value="off">Frequenza: manuale</option></select>
+  </div>
+</div>
+
+<details class="card"><summary style="cursor:pointer;font-weight:600;font-size:16px">Regolazioni manuali del filtro (facoltative)</summary>
+  <div class="row" style="margin-top:10px">
+    <select id="mode"><option value="auto">Automatico giorno/notte</option><option value="day">Sempre giorno</option><option value="night">Sempre notte</option><option value="manual">Manuale (usa i cursori così come sono)</option><option value="off">Filtro disattivato</option></select>
+    <select id="roiMode"><option value="face">Misura sul volto, se rilevato</option><option value="eyes">Misura sugli occhi (occhiali scuri)</option><option value="center">Misura al centro</option></select>
+  </div>
+  <div class="status" id="modeNote">In automatico il filtro passa con continuità da giorno (livelli sul volto, contrasto locale) a notte (solo pulizia del rumore e un guadagno contenuto: l'immagine resta scura e a colori, perché al rilevatore serve meno rumore, non più luce).</div>
+  <div class="cols">
+    <div>
+      <h3>Giorno e controluce</h3>
+      <label>Nitidezza di giorno <b id="sharpenV">0.3</b></label>
+      <input id="sharpen" type="range" min="0" max="2" step="0.1" value="0.3">
+      <label>Contrasto locale di giorno (CLAHE) <b id="claheDayV">1.3</b></label>
+      <input id="claheDay" type="range" min="0" max="3" step="0.1" value="1.3">
+      <label>Colore di giorno</label>
+      <select id="color" style="width:100%"><option value="1">Mantieni il colore</option><option value="0">Sempre bianco e nero</option></select>
+      <h3>Notte e NIR</h3>
+      <label>Canale</label>
+      <select id="channel" style="width:100%"><option value="auto">Automatico: mix R+G+B pesato sul segnale</option><option value="r">Rosso R</option><option value="g">Verde G</option><option value="b">Blu B</option><option value="y">Grigio Y</option><option value="sum">Somma R+G+B</option></select>
+      <label>Media temporale adattiva al movimento <b id="temporalV">8 fotogrammi</b></label>
+      <input id="temporal" type="range" min="1" max="16" step="1" value="8">
+      <label>Soglia di movimento <b id="motionKV">4.5 σ</b></label>
+      <input id="motionK" type="range" min="1.5" max="10" step="0.5" value="4.5">
+      <label>Riduzione rumore spaziale</label>
+      <select id="spatial" style="width:100%"><option value="0">Disattivata</option><option value="1">Al massimo leggera (σ 0,7 px)</option><option value="2">Al massimo media (σ 1,7 px)</option><option value="3" selected>Al massimo forte (σ 3 px)</option></select>
+      <label>Nitidezza di notte (sconsigliata: amplifica il rumore) <b id="sharpenNightV">0.0</b></label>
+      <input id="sharpenNight" type="range" min="0" max="3" step="0.1" value="0">
+      <label>Contrasto locale di notte (CLAHE, sconsigliato) <b id="claheV">0.0</b></label>
+      <input id="clahe" type="range" min="0" max="5" step="0.1" value="0">
+      <label>Luminosità obiettivo di notte <b id="targetNightV">0.45</b></label>
+      <input id="targetNight" type="range" min="0.1" max="0.8" step="0.01" value="0.45">
+      <label>Guadagno massimo di notte <b id="maxGainNightV">5×</b></label>
+      <input id="maxGainNight" type="range" min="1" max="16" step="0.5" value="5">
+    </div>
+    <div>
+      <h3>Livelli</h3>
+      <select id="tone" style="width:100%"><option value="auto">Livelli automatici</option><option value="manual">Livelli manuali</option></select>
+      <label>Luminosità obiettivo (auto) <b id="targetV">0.42</b></label>
+      <input id="target" type="range" min="0.25" max="0.6" step="0.01" value="0.42">
+      <label>Guadagno massimo (auto) <b id="maxGainV">24×</b></label>
+      <input id="maxGain" type="range" min="2" max="48" step="1" value="24">
+      <label>Gamma (manuale) <b id="gammaV">1.8</b></label>
+      <input id="gamma" type="range" min="0.5" max="3.5" step="0.1" value="1.8">
+      <label>Guadagno digitale (manuale) <b id="gainV">3.0×</b></label>
+      <input id="gain" type="range" min="1" max="40" step="0.5" value="3">
+      <label>Soglia hotspot (pixel esclusi dalle statistiche) <b id="hotV">245</b></label>
+      <input id="hot" type="range" min="180" max="255" step="1" value="245">
+      <h3>Soglie giorno/notte</h3>
+      <label>Notte piena sotto media Y <b id="nightYV">40</b></label>
+      <input id="nightY" type="range" min="10" max="70" step="1" value="40">
+      <label>Giorno pieno sopra media Y <b id="dayYV">80</b></label>
+      <input id="dayY" type="range" min="50" max="140" step="1" value="80">
+    </div>
+  </div>
+  <div class="row" style="margin-top:10px"><button id="reset">Ripristina i valori automatici</button></div>
+</details>
+
+<details class="card"><summary style="cursor:pointer;font-weight:600;font-size:16px">Fotocamera: comandi manuali (facoltativi)</summary>
+  <label>Frequenza richiesta (più bassa = il sensore può esporre più a lungo, ma aumenta il mosso)</label>
+  <div class="row"><button data-fps="30">30 FPS</button><button data-fps="15">15 FPS</button><button data-fps="10">10 FPS</button></div>
+  <label>Compensazione EV</label>
+  <div class="row"><button data-ev="0">0 EV</button><button data-ev="1">+1 EV</button><button data-ev="2">+2 EV</button><button data-ev="-1">−1 EV</button><button data-ev="-2">−2 EV</button></div>
+  <div id="evstatus" class="status">Non modificata. Non viene mai richiesta exposureMode=manual.</div>
+  <small>Usare un comando manuale sospende il relativo automatismo. Non viene mai richiesta exposureMode=manual; vale solo ciò che getSettings() conferma.</small>
+</details>
+
+<div class="card"><h2>Metriche della zona di misura</h2>
+  <div class="metrics">
+    <div class="metric"><b id="mean">—</b><span>Media Y grezza / 255</span></div>
+    <div class="metric"><b id="rgb">—</b><span>Medie R / G / B</span></div>
+    <div class="metric"><b id="night">—</b><span>Giorno ↔ notte</span></div>
+    <div class="metric"><b id="p95">—</b><span>P95 Y grezzo</span></div>
+    <div class="metric"><b id="black">—</b><span>Zone ≤ 5</span></div>
+    <div class="metric"><b id="hotpct">—</b><span>Zone sature / hotspot</span></div>
+    <div class="metric"><b id="sigma">—</b><span>Rumore temporale σ (blocchi 4×4)</span></div>
+    <div class="metric"><b id="nr">—</b><span>Riduzione rumore stimata</span></div>
+    <div class="metric"><b id="still">—</b><span>Area ferma (media attiva)</span></div>
+    <div class="metric"><b id="tFilter">—</b><span>Tempo filtro</span></div>
+    <div class="metric"><b id="tDet">—</b><span>Tempo rilevamento A / B</span></div>
+    <div class="metric"><b id="fpsDms">—</b><span>FPS stimati nel DMS (filtro + rilevamento con la cadenza scelta)</span></div>
+    <div class="metric"><b id="mProf">—</b><span>Profilo volto: controluce / luce puntata / normale</span></div>
+    <div class="metric"><b id="mEyeA">—</b><span>Occhi grezza: pupilla↔iride / iride↔sclera (livelli)</span></div>
+    <div class="metric"><b id="mEyeB">—</b><span>Occhi filtrata: pupilla↔iride / iride↔sclera (livelli)</span></div>
+  </div>
+  <small>Le metriche grezze sono calcolate prima del filtro. La riduzione del rumore è una stima, non una misura.</small>
+</div>
+
+<div class="card"><h2>Prova A/B – rilevamento del volto</h2>
+  <div class="muted" style="margin-bottom:8px">Lo stesso rilevatore (MediaPipe Face Landmarker) riceve A senza filtro e B filtrato. È il criterio che conta per il DMS.</div>
+  <div class="row"><button id="abLoad" class="primary">Carica rilevatore</button>
+    <select id="abDelegate"><option value="AUTO">Rilevatore: sceglie il più veloce</option><option value="GPU">Rilevatore su GPU</option><option value="CPU">Rilevatore su CPU</option></select>
+    <select id="abArmA"><option value="raw">A = grezza</option><option value="gain">A = solo guadagno</option></select>
+    <select id="abMode"><option value="VIDEO">Con tracking (come un DMS)</option><option value="IMAGE">Senza tracking (più severa, più lenta)</option></select>
+    <select id="faceZoom" aria-label="Ingrandimento digitale del volto">
+      <option value="off" selected>Zoom volto: disattivato</option>
+      <option value="1.5">Zoom volto: 1,5×</option>
+      <option value="2">Zoom volto: 2×</option>
+      <option value="auto">Zoom volto: adattivo</option>
+    </select>
+    <select id="abPair"><option value="alt">A e B a fotogrammi alterni (veloce)</option><option value="pair">A e B sullo stesso fotogramma (lenta)</option></select>
+    <select id="abStride" aria-label="Cadenza del rilevatore"><option value="1" selected>Rilevatore: ogni fotogramma (1×, più misure degli occhi)</option><option value="2">Rilevatore: un fotogramma su 2 (2×, più FPS)</option></select></div>
+  <small>Con la cadenza 2× il filtro lavora su ogni fotogramma e il rilevatore su uno ogni due: nei fotogrammi intermedi restano i landmark dell'ultimo rilevamento (zona di misura, occhi, disegno). Metriche, prove e prova occhi contano solo i rilevamenti nuovi; il badge mostra FPS della fotocamera e rilevamenti al secondo.</small>
+  <small>Lo zoom agisce solo sull'immagine inviata al rilevatore, non sulla fotocamera, sul filtro IRFilter o sull'anteprima. Il volto viene ritagliato con margine; se manca il rilevamento, il software riprova sull'intero fotogramma.</small>
+  <div id="zoomStatus" class="status">Zoom disattivato. Nelle prove sul telefono dimezzava la velocità senza migliorare il rilevamento; ora il ritaglio è stabile e si può riprovare.</div>
+  <div class="row" style="margin-top:8px"><button id="abTrial" disabled>Avvia prova</button>
+    <select id="rawSeq"><option value="8" selected>Salva 8 fotogrammi grezzi per prova</option><option value="16">Salva 16 fotogrammi grezzi</option><option value="0">Non salvare fotogrammi grezzi</option></select>
+    <select id="abDur"><option value="10">10 secondi</option><option value="20" selected>20 secondi</option><option value="40">40 secondi</option></select>
+    <input id="abNote" type="text" placeholder="Nota (es. buio + 2 LED 850 nm)"></div>
+  <div id="abStatus" class="status">Il rilevatore si carica da solo all'avvio della fotocamera. Serve la connessione (circa 13 MB, una sola volta).</div>
+  <table style="margin-top:8px"><thead><tr><th>Ultimi 60 fotogrammi</th><th class="a" id="abHA">A grezza</th><th class="b">B filtrata</th></tr></thead><tbody>
+    <tr><td>Volto rilevato</td><td id="aDet">—</td><td id="bDet">—</td></tr>
+    <tr><td>Jitter landmark (% distanza occhi)</td><td id="aJit">—</td><td id="bJit">—</td></tr>
+    <tr><td>EAR medio (entrambi gli occhi)</td><td id="aEar">—</td><td id="bEar">—</td></tr>
+    <tr><td>EAR occhio 1 / occhio 2</td><td id="aEyes">—</td><td id="bEyes">—</td></tr>
+    <tr><td>Rumore EAR (|Δ| mediano)</td><td id="aEarN">—</td><td id="bEarN">—</td></tr>
+    <tr><td>MAR medio (apertura bocca)</td><td id="aMar">—</td><td id="bMar">—</td></tr>
+    <tr><td>Contrasto pupilla↔iride (livelli su 255)</td><td id="aPI">—</td><td id="bPI">—</td></tr>
+    <tr><td>Contrasto iride↔sclera (livelli su 255)</td><td id="aIS">—</td><td id="bIS">—</td></tr>
+    <tr><td>Scarto A↔B (% distanza occhi)</td><td colspan="2" id="abAgree">—</td></tr>
+    <tr><td>Volto rilevato da A oppure da B</td><td colspan="2" id="abUnion">—</td></tr>
+  </tbody></table>
+  <div id="abVerdict" class="status">Nessuna prova eseguita.</div>
+  <h3 style="margin-top:16px">Prova occhi guidata</h3>
+  <div class="muted" style="margin-bottom:8px">Da fermi, non alla guida. Un segnale acuto (e una vibrazione) = <b>chiudi gli occhi</b>; due segnali gravi = <b>riaprili</b>. Cinque chiusure da 2 secondi, in tutto circa 30 secondi. Misura se A e B distinguono occhi aperti e chiusi, quante chiusure vedono e con quale ritardo.</div>
+  <div class="row"><button id="eyeTest" disabled>Avvia prova occhi</button></div>
+  <div id="eyeStatus" class="status">Nessuna prova occhi eseguita.</div>
+  <table style="margin-top:8px"><thead><tr><th>Prova occhi</th><th class="a">A grezza</th><th class="b">B filtrata</th></tr></thead><tbody>
+    <tr><td>Volto rilevato a occhi aperti / chiusi</td><td id="eaDet">—</td><td id="ebDet">—</td></tr>
+    <tr><td>EAR a occhi aperti</td><td id="eaOpen">—</td><td id="ebOpen">—</td></tr>
+    <tr><td>EAR a occhi chiusi</td><td id="eaClosed">—</td><td id="ebClosed">—</td></tr>
+    <tr><td>Separazione aperto/chiuso (più alta è meglio)</td><td id="eaSep">—</td><td id="ebSep">—</td></tr>
+    <tr><td>Fotogrammi classificati bene: aperti / chiusi</td><td id="eaOk">—</td><td id="ebOk">—</td></tr>
+    <tr><td>Chiusure viste</td><td id="eaSeen">—</td><td id="ebSeen">—</td></tr>
+    <tr><td>Ritardo medio dal segnale</td><td id="eaLag">—</td><td id="ebLag">—</td></tr>
+  </tbody></table>
+  <small>Jitter e rumore EAR hanno senso solo con telefono appoggiato e volto fermo. Lo scarto A↔B è disponibile solo con A e B sullo stesso fotogramma. I contrasti degli occhi sono misurati dal filtro sui landmark: colonna A sul fotogramma grezzo, colonna B su quello filtrato.</small>
+</div>
+
+<div class="card"><h2>Archivio ed esportazione</h2>
+  <div class="muted" style="margin-bottom:8px">Ogni prova e ogni campione restano salvati in questo browser, anche dopo aver chiuso la pagina. Lo ZIP li contiene tutti.</div>
+  <div class="row"><button id="zip" class="primary">Esporta ZIP completo</button><button id="diag">Leggi driver</button><button id="clear" class="danger">Svuota archivio</button></div>
+  <div id="sampleStatus" class="status">Archivio vuoto.</div><pre id="report">Diagnostica non ancora acquisita.</pre>
+</div>
+
+<div class="card"><h2>Protocollo di prova</h2><ol>
+  <li><b>Appoggiare il telefono</b> su un supporto: tenerlo in mano produce mosso e falsa jitter e media temporale.</li>
+  <li>Avviare la fotocamera e non toccare altro: attendere che il rilevatore sia attivo e leggere nella scheda «Automatico» cosa è stato scelto.</li>
+  <li><b>Giorno, luce frontale.</b> Prova da 20 secondi a volto fermo. Nota: «giorno frontale».</li>
+  <li><b>Giorno, sole sul volto</b> e <b>controluce</b>: una prova ciascuno, lasciando lavorare l'esposizione automatica sul volto.</li>
+  <li><b>Filtri volto.</b> Ripetere controluce e sole sul volto con «Profilo: automatico», poi forzando «controluce» e «luce puntata». Con la vista «zoom occhi» controllare palpebre, iride e pupilla; con la prova occhi guidata verificare che le chiusure restino distinte (separazione e chiusure viste in B non peggiori di A). Provare anche «Occhi: nessun potenziamento» per isolare l'effetto sugli occhi.</li>
+  <li>Con occhiali scuri: ripetere una prova con «Misura sugli occhi» nelle regolazioni manuali e confrontare EAR e rilevamento.</li>
+  <li><b>Buio senza illuminazione aggiuntiva</b>: fascia rossa spenta. Eseguire una prova di riferimento.</li>
+  <li><b>Buio con fascia rossa</b>: attivare la fascia sul display, mantenendo invariati posizione, distanza e parametri. La frequenza scende da sola a 15 FPS se serve.</li>
+  <li>Ripetere entrambe le condizioni con «A = solo guadagno» per capire se serve la riduzione del rumore. La fascia rossa non sostituisce una prova con illuminatore IR.</li>
+  <li>Una prova con ammiccamenti lenti e piccoli movimenti: controllare scie e ritardo sulle palpebre.</li>
+  <li><b>Zoom digitale del volto:</b> confrontare prima «disattivato» e poi 1,5× mantenendo invariata la posizione; successivamente provare 2× o adattivo. Lo zoom riguarda solo l'ingresso del rilevatore, non il flusso del filtro. Esportare uno ZIP dopo ogni sessione.</li>
+  <li>Esportare lo ZIP completo: contiene tutte le prove, i parametri, i dati del driver e le immagini.</li></ol>
+  <p class="warn">Il filtro non elimina il mosso della fotocamera, non rimuove l'IR-cut e non crea dettagli assenti. Evitare di guardare direttamente gli illuminatori IR.</p>
+</div>
+
+<div class="card"><h2>Integrazione futura nel DMS</h2>
+  <div class="muted">Il motore è il primo blocco &lt;script&gt; di questo file e non dipende dalla pagina. Per ora resta separato.</div>
+<pre>const filter = IRFilter.create({ mode: 'auto', procW: 480 });   // GPU se possibile, altrimenti CPU; si dimensiona da solo sul video
+// a ogni fotogramma nuovo della fotocamera:
+filter.process(video);                                // il risultato è in filter.canvas
+const res = landmarker.detectForVideo(filter.canvas, performance.now());
+// riquadro del volto (0..1) trovato dal DMS: livelli ed esposizione misurati lì
+filter.setROI([x0, y0, x1, y1]);
+// occhi trovati dal DMS (pixel del fotogramma elaborato): contorno di 16 punti, centro e raggio dell'iride
+filter.setEyes([{ contour: [[x, y], …], iris: [x, y], r }, { … }]);   // null se il volto non c'è</pre>
+</div>
+
+<video id="video" autoplay playsinline muted></video>
+</main>
+<div id="redIllumination" aria-hidden="true"></div>
+
+<!-- ======================================================================
+     IRFilter 0.10 — motore del filtro. Nessuna dipendenza dalla pagina.
+     Catena: mix canali → media temporale adattiva al movimento → sfocatura →
+       giorno  FaceLight: velo del flare → base/dettaglio (filtro guidato in log)
+               → base compressa intorno al volto (controluce / luce puntata)
+               → dettaglio → spalla sulle luci → occhi (LUT per occhio) → colore
+       notte   nitidezza → livelli sul volto → CLAHE → colore  (come la 0.9.3)
+     I due rami si fondono con continuità secondo quanto è «notte».
+     Due motori con la stessa interfaccia:
+       IRFilter.GPU  WebGL2, tutto il lavoro per pixel negli shader; la CPU
+                     legge solo una griglia ridotta (1/4) per le statistiche.
+       IRFilter.CPU  riserva senza WebGL: bianco e nero, senza nitidezza.
+     ====================================================================== -->
+<script>
+(function (root) {
+'use strict';
+
+const DEFAULTS = {
+  mode: 'auto',             // 'auto' | 'day' | 'night' | 'manual' | 'off'
+  nightY: 40, dayY: 80,     // media Y grezza della zona di misura: sotto = notte piena, sopra = giorno pieno
+  channel: 'auto',          // 'auto' | 'r' | 'g' | 'b' | 'y' | 'sum' | 'rg' (rosso meno verde: annulla il rumore comune ai canali)
+  temporal: 8,              // notte: massimo di fotogrammi equivalenti di media (1 = disattivata)
+  motionK: 4.5,             // soglia di movimento in σ del rumore di blocco (il rumore reale ha code più larghe di quello teorico)
+  spatial: 3,               // notte: massimo di passate di sfocatura (σ ≈ 0,7 / 1,7 / 3 px): il rumore reale è a macchie di 3-4 px
+  clahe: 0,                 // notte: contrasto locale spento (vedi targetNight)
+  claheDay: 1.3,            // giorno: limite di clip CLAHE
+  sharpen: 0.3,             // giorno: maschera di contrasto (di giorno l'immagine grezza è già la migliore)
+  sharpenNight: 0,          // notte: nitidezza spenta. Il rumore reale è a macchie e viene scambiato per dettaglio:
+                            // sui fotogrammi reali del telefono il volto si trovava in 0 casi su 26 con la nitidezza, in 8-10 senza
+  color: 1,                 // giorno: 1 = mantiene il colore
+  tone: 'auto',             // 'auto' | 'manual'
+  target: 0.42,             // giorno: mediana desiderata dopo i livelli (0..1)
+  maxGain: 24,              // giorno e controluce: limite dello stiramento automatico
+  // Notte «naturale». Sui fotogrammi reali del telefono al rilevatore non serve un'immagine più chiara, serve meno rumore:
+  // la media di 2 fotogrammi grezzi, scura com'è, basta a trovare il volto; sottrarre il nero, la gamma e il contrasto
+  // locale lo fanno perdere di nuovo. Di notte quindi: colore conservato, guadagno lineare e contenuto, nient'altro.
+  targetNight: 0.45,        // notte: livello desiderato per la parte chiara del volto (solo guadagno lineare)
+  maxGainNight: 5,          // notte: guadagno massimo
+  gamma: 1.8, gain: 3,      // usati solo con tone = 'manual'
+  tiles: 8,
+  hot: 245,                 // zone con un canale ≥ hot escluse dalle statistiche
+  statsEvery: 3,            // GPU: lettura delle statistiche ogni N fotogrammi
+  procW: 0,                 // > 0: il motore si dimensiona da solo sulla sorgente (lato corto massimo), seguendone le proporzioni
+  roi: [0.18, 0.18, 0.82, 0.82],
+  flProfile: 'auto',        // filtri volto di giorno: 'auto' | 'back' controluce | 'spot' luce puntata | 'neutral' | 'classic' (livelli + CLAHE della 0.9.3)
+  flStrength: 1,            // intensità dei filtri volto: 0 = solo esposizione sul volto, 1 = profilo, 1,5 = più forte
+  eyeBoost: 0.7             // potenziamento degli occhi (0 = spento); serve setEyes() con i landmark del rilevatore
+};
+const HB = 1024;            // istogramma a 0,25 livelli: di notte il segnale utile può stare in 10 livelli
+const now = () => performance.now();
+const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
+
+function percentile(hist, total, p) {
+  const goal = total * p; let acc = 0;
+  for (let i = 0; i < hist.length; i++) { acc += hist[i]; if (acc >= goal) return i; }
+  return hist.length - 1;
+}
+/** Quanto è "notte" (0..1), dal segnale medio della zona di misura. Costante di tempo in secondi, non in fotogrammi. */
+function nightStep(o, prev, sig, dt) {
+  if (o.mode === 'day') return 0;
+  if (o.mode === 'night') return 1;
+  if (o.mode !== 'auto') return prev || 0;
+  const t = clamp((o.dayY - sig) / Math.max(1, o.dayY - o.nightY), 0, 1);
+  return prev == null ? t : prev + (1 - Math.exp(-dt / 0.5)) * (t - prev);
+}
+/**
+ * Parametri effettivi. Due misure guidano il profilo:
+ *  n    quanto è buio il volto → colore, contrasto locale, nitidezza;
+ *  gain quanto si sta amplificando → quanta riduzione del rumore serve (amplificare senza ripulire peggiora il rilevamento).
+ */
+function effective(o, n, need) {
+  if (o.mode === 'manual') return { n, temporal: Math.max(1, o.temporal | 0), spatialF: o.spatial | 0, clahe: o.clahe, claheAmt: 1, sharpen: o.sharpen, color: o.color && o.channel !== 'rg' ? 1 : 0 };
+  const g = need || 1;      // quanto servirebbe amplificare per avere un'immagine piena: misura quanto è debole il segnale
+  return {
+    n, temporal: clamp(Math.round(1 + 1.6 * (g - 1.2)), 1, Math.max(1, o.temporal | 0)),
+    spatialF: clamp(2 * Math.log2(g / 1.2), 0, o.spatial | 0),      // tarato sui fotogrammi reali: 21 volti su 26 contro 18 con metà della sfocatura
+    clahe: o.claheDay + n * (o.clahe - o.claheDay), claheAmt: 0.5 + 0.5 * n,
+    sharpen: o.sharpen + n * (o.sharpenNight - o.sharpen),
+    color: o.color && o.channel !== 'rg' ? 1 : 0      // il colore ora è quello ripulito, non quello grezzo: si tiene anche di notte
+  };
+}
+function channelWeights(self, o, mr, mg, mb) {
+  switch (o.channel) {
+    case 'r': return [1, 0, 0];
+    case 'g': return [0, 1, 0];
+    case 'b': return [0, 0, 1];
+    case 'y': return [0.2126, 0.7152, 0.0722];
+    case 'sum': return [1 / 3, 1 / 3, 1 / 3];
+    case 'rg': return [1, -0.5, 0];
+  }
+  // Peso ∝ (segnale)²: con luce rossa o NIR conta quasi solo il canale che porta segnale, senza aggiungere
+  // il rumore degli altri; con luce bianca i tre canali pesano quasi uguale.
+  const a = Math.max(0.2, mr - 1), b = Math.max(0.2, mg - 1), c = Math.max(0.2, mb - 1), s = a * a + b * b + c * c, t = [a * a / s, b * b / s, c * c / s];
+  if (!self._wts) self._wts = t; else for (let k = 0; k < 3; k++) self._wts[k] += 0.15 * (t[k] - self._wts[k]);
+  return self._wts;
+}
+/** Percentili → livelli smorzati nel tempo → curva (lo, span, esponente). dt = secondi dall'ultima misura. */
+function levels(self, o, hist, hn, dt, n) {
+  if (o.tone === 'manual') return { lo: 0, span: 255 / o.gain, ge: 1 / o.gamma, gain: o.gain, need: o.gain };
+  let lo = 0, med = 64, hi = 255, p90 = 128;
+  if (hn >= 32) { lo = percentile(hist, hn, 0.01) / 4; med = (percentile(hist, hn, 0.5) + 0.5) / 4; hi = (percentile(hist, hn, 0.995) + 1) / 4; p90 = (percentile(hist, hn, 0.9) + 0.5) / 4; }
+  if (!(self._hi >= 0)) { self._lo = lo; self._med = med; self._hi = hi; self._p90 = p90; }
+  else {
+    // Più luce all'improvviso (lampioni, fari): si segue subito, altrimenti il volto resta bruciato finché i livelli
+    // non si adeguano. Meno luce: rapido ma non istantaneo. Variazioni piccole: smorzate per non far tremolare l'immagine.
+    const range = self._hi - self._lo + 4, up = hi > self._hi + 0.12 * range, down = hi < self._hi - 0.3 * range;
+    const k = up ? 0.9 : 1 - Math.exp(-dt / (down ? 0.12 : 0.3));
+    self._lo += k * (lo - self._lo); self._med += k * (med - self._med); self._hi += k * (hi - self._hi); self._p90 += k * (p90 - self._p90);
+  }
+  const spanD = Math.max(self._hi - self._lo, 255 / o.maxGain, 1);
+  const medN = clamp((self._med - self._lo) / spanD, 0.03, 0.97), geD = clamp(Math.log(o.target) / Math.log(medN), 0.45, 1.25);
+  // Quanto è debole il segnale: si guarda la parte chiara della zona di misura (il volto), non la mediana,
+  // che con un volto illuminato su fondo nero è dominata dal fondo e farebbe sfocare troppo.
+  const need = clamp(110 / Math.max(1, self._p90), 1, 64);
+  // giorno: nero, bianco e gamma sulla zona di misura. Notte: solo guadagno lineare. In mezzo: passaggio continuo.
+  const k = o.mode === 'manual' ? 0 : n || 0, gN = clamp(o.targetNight * 255 / Math.max(1, self._p90), 1, o.maxGainNight);
+  const span = Math.exp((1 - k) * Math.log(spanD) + k * Math.log(255 / gN));
+  return { lo: self._lo * (1 - k), span, ge: 1 + (geD - 1) * (1 - k), gain: 255 / span, need };
+}
+function blankStats() {
+  return { active: false, need: 1, frameY: 0, meanY: 0, meanR: 0, meanG: 0, meanB: 0, p95: 0, blackPct: 0, hotPct: 0, sigmaRaw: null, nrDb: 0, stillPct: 0, gain: 1, gammaExp: 1, lo: 0, hi: 255, weights: null, night: 0, eff: null, ms: 0, msStats: 0, flW: 0, fl: null };
+}
+
+/* ---------------------------------------------------------------- FaceLight: filtri volto (comuni ai due motori)
+   Due profili di giorno con passaggio continuo, scelti dalle statistiche del volto e dello sfondo:
+     back  CONTROLLUCE  sole o cielo dietro la testa: via il velo del flare, volto pieno, sfondo compresso
+     spot  LUCE PUNTATA sole o lampada sul volto: luci di fronte e naso compresse, ombre dure schiarite
+   Base e dettaglio con un filtro guidato in log sulla griglia 1/4: i bordi netti (contorno della testa,
+   ombra del naso) restano nella base, quindi la compressione non crea aloni e il dettaglio fine resta.
+   Riferimento numerico: facelight_reference.py (stessi passaggi, stessi parametri). */
+const FACE_PROFILES = {
+  back:    { w: 0.80, cs: 0.80, ch: 0.38, kd: 1.55, target: 0.51, sat: 0.90, knee: 0.80 },
+  spot:    { w: 0.30, cs: 0.50, ch: 0.70, kd: 1.50, target: 0.56, sat: 0.95, knee: 0.78 },
+  neutral: { w: 0.15, cs: 0.85, ch: 0.80, kd: 1.20, target: 0.50, sat: 1.00, knee: 0.86 }
+};
+const FL_ID = { w: 0, cs: 1, ch: 1, kd: 1, sat: 1 }, FL_EPS = 0.04 * 0.04, EYE_W = 48, EYE_H = 32;
+const toL = y => Math.log2(clamp(y, 0, 1) * 255 + 1) / 8;
+/** Percentili con interpolazione lineare (come numpy) di un array JS o tipizzato; ordina sul posto. */
+function pcts(a, n, ps) {
+  if (!n) return ps.map(() => NaN);
+  const s = a.length === n && !ArrayBuffer.isView(a) ? a.sort((x, y) => x - y) : a.subarray(0, n).sort();
+  return ps.map(p => { const pos = p * (n - 1), i = Math.floor(pos), f = pos - i; return i + 1 < n ? s[i] + f * (s[i + 1] - s[i]) : s[i]; });
+}
+function pointInPoly(X, Y, poly) {
+  let ins = false;
+  for (let i = 0, n = poly.length; i < n; i++) {
+    const a = poly[i], b = poly[(i + 1) % n];
+    if ((a[1] > Y) !== (b[1] > Y) && X < (b[0] - a[0]) * (Y - a[1]) / ((b[1] - a[1]) + 1e-12) + a[0]) ins = !ins;
+  }
+  return ins;
+}
+const eyeUsable = e => !!e && e.r >= 1.5 && Math.hypot(e.contour[0][0] - e.contour[8][0], e.contour[0][1] - e.contour[8][1]) >= 8;
+const FL = {
+  radii(roi, LW) { const fw = Math.max(8, (roi[2] - roi[0]) * LW); return [clamp(Math.round(fw * 0.25), 2, 16), clamp(Math.round(fw * 0.10), 2, 10)]; },
+  /** Pesi dei profili (somma 1) dalle statistiche della scena. */
+  weights(st) {
+    let back = clamp((st.bgP90 - st.faceMed - 25) / 95, 0, 1);
+    if (st.frameHot > 5 && st.bgP90 > 240) back = Math.max(back, 0.6);              // sole in campo
+    back = Math.max(back, clamp((st.veil - 35) / 50, 0, 1));                          // velo sul volto = flare
+    const contrast = Math.log2((st.faceP95 + 1) / (st.faceP05 + 1));                // stop tra luci e ombre del volto
+    let spot = Math.max(clamp((st.faceP95 - 185) / 50, 0, 1) * clamp((contrast - 1.2) / 1.3, 0, 1), clamp(st.faceHot / 4, 0, 1));
+    spot *= 1 - back;
+    return { back, spot, neutral: Math.max(0, 1 - back - spot) };
+  },
+  params(wts, strength) {
+    const P = {};
+    for (const k in FACE_PROFILES.back) { let v = 0; for (const n in FACE_PROFILES) v += (wts[n] || 0) * FACE_PROFILES[n][k]; P[k] = v; }
+    for (const k in FL_ID) P[k] = FL_ID[k] + strength * (P[k] - FL_ID[k]);
+    return P;
+  },
+  /** LUT (256 valori 0..1) di un occhio, ancorata alla pelle delle palpebre: va → va.
+   *  La palpebra non si schiarisce mai, quindi un occhio chiuso resta chiuso. Sotto l'ancora si espande
+   *  (ciglia, iride) e tra iride e pupilla di più; sopra, la sclera si schiarisce un poco. */
+  curve(vp, vi, vs, va) {
+    vi = Math.min(vi, va - 0.004); vp = Math.min(vp, vi - 0.002);
+    const G = Math.max(1, Math.min(1.8, (va - 0.10) / Math.max(va - vi, 1e-3))), oi = va - G * (va - vi);
+    const Gp = Math.max(1, Math.min(2.4, (oi - 0.03) / Math.max(vi - vp, 1e-3))), op = Math.max(0.02, oi - Gp * (vi - vp));
+    const pin = [0, vp, vi, va], pout = [0, op, oi, va];
+    if (vs != null && vs > va + 0.01) { pin.push(vs); pout.push(Math.min(0.9, va + 1.4 * (vs - va))); }
+    pin.push(1); pout.push(1);
+    for (let k = 1; k < pin.length; k++) { pin[k] = Math.max(pin[k], pin[k - 1] + 1e-4); pout[k] = Math.max(pout[k], pout[k - 1]); }
+    const L = new Float32Array(256);
+    for (let t = 0, s = 0; t < 256; t++) { const x = t / 255; while (s < pin.length - 2 && x > pin[s + 1]) s++; L[t] = pout[s] + (pout[s + 1] - pout[s]) * clamp((x - pin[s]) / (pin[s + 1] - pin[s]), 0, 1); }
+    return L;
+  },
+  /** Riquadro della patch letta dalla CPU e ellisse della maschera (pixel, y verso il basso). */
+  geometry(e) {
+    const c = e.contour, r = e.r; let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (const p of c) { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1]; }
+    return { box: [x0 - r, y0 - 2 * r, x1 + r, y1 + 2 * r], ell: [(x0 + x1) / 2, (y0 + y1) / 2, 0.5 * (x1 - x0) * 1.15 + 0.4 * r, Math.max(0.5 * (y1 - y0), r) + r] };
+  },
+  /** Livelli [pupilla, iride, sclera|null, palpebra] (0..1) da una patch EYE_W×EYE_H; null se non misurabili. */
+  levels(patch, e, box) {
+    const x0 = box[0], y0 = box[1], bw = box[2] - box[0], bh = box[3] - box[1], R = e.r, ix = e.iris[0], iy = e.iris[1];
+    if (!(bw >= 4 && bh >= 4)) return null;
+    const pup = [], iri = [], scl = [], lid = [];
+    for (let j = 0; j < EYE_H; j++) {
+      const Y = y0 + (j + 0.5) / EYE_H * bh;
+      for (let i = 0; i < EYE_W; i++) {
+        const v = patch[j * EYE_W + i]; if (!(v < 0.985)) continue;                  // niente riflesso corneale
+        const X = x0 + (i + 0.5) / EYE_W * bw, r = Math.hypot(X - ix, Y - iy);
+        if (pointInPoly(X, Y, e.contour)) { if (r < 0.45 * R) pup.push(v); else if (r >= 0.5 * R && r < 0.95 * R) iri.push(v); else if (r > 1.15 * R) scl.push(v); }
+        else lid.push(v);
+      }
+    }
+    if (pup.length < 2 || iri.length < 3 || lid.length < 3) return null;
+    return [pcts(pup, pup.length, [0.2])[0], pcts(iri, iri.length, [0.5])[0], scl.length >= 3 ? pcts(scl, scl.length, [0.7])[0] : null, pcts(lid, lid.length, [0.5])[0]];
+  }
+};
+/** Stato FaceLight condiviso: parametri smorzati, velo massimo, base del volto, occhi. */
+function flState(o) {
+  const id = () => { const a = new Uint8Array(256); for (let i = 0; i < 256; i++) a[i] = i; return a; };
+  return { first: true, wts: null, P: FL.params({ neutral: 1 }, o.flStrength), cap: [0.3, 0.3, 0.3], mid: toL(0.45), ref: 0, veil: 0, st: null,
+    eyeAmt: [0, 0], eyeOk: [false, false], lv: [null, null], lut8: [id(), id()], eyeC: [null, null] };
+}
+/** Aggiorna profilo, velo massimo e base del volto. get(yi, x, out) riempie out = [Y 0..255, hotspot, veloR, veloG, veloB, base]. */
+function flUpdate(fl, o, roi, LW, LH, get, dt, buf) {
+  const x0 = clamp(Math.floor(roi[0] * LW), 0, LW - 2), x1 = clamp(Math.ceil(roi[2] * LW), x0 + 2, LW);
+  const y0 = clamp(Math.floor(roi[1] * LH), 0, LH - 2), y1 = clamp(Math.ceil(roi[3] * LH), y0 + 2, LH);
+  const nb = LW * LH, FY = buf.subarray(0, nb), VR = buf.subarray(nb, 2 * nb), VG = buf.subarray(2 * nb, 3 * nb), VB = buf.subarray(3 * nb, 4 * nb), VM = buf.subarray(4 * nb, 5 * nb), BA = buf.subarray(5 * nb, 6 * nb), BG = buf.subarray(6 * nb, 7 * nb);
+  const v = [0, false, 0, 0, 0, 0]; let n = 0, nbg = 0, hot = 0, fhot = 0;
+  for (let yi = 0; yi < LH; yi++) for (let x = 0; x < LW; x++) {
+    get(yi, x, v); if (v[1]) hot++;
+    if (x >= x0 && x < x1 && yi >= y0 && yi < y1) { FY[n] = v[0]; VR[n] = v[2]; VG[n] = v[3]; VB[n] = v[4]; VM[n] = Math.min(v[2], v[3], v[4]); BA[n] = v[5]; if (v[1]) fhot++; n++; }
+    else BG[nbg++] = v[0];
+  }
+  const f = pcts(FY, n, [0.5, 0.05, 0.95]);
+  const st = { faceMed: f[0], faceP05: f[1], faceP95: f[2], faceHot: 100 * fhot / n, bgP90: nbg ? pcts(BG, nbg, [0.9])[0] : 128, frameHot: 100 * hot / nb, veil: pcts(VM, n, [0.5])[0] * 255 };
+  const cap = [VR, VG, VB].map(a => pcts(a, n, [0.5])[0] * 1.25 + 0.02), mid = pcts(BA, n, [0.5])[0];
+  const p = o.flProfile, tw = p === 'auto' ? FL.weights(st) : { back: +(p === 'back'), spot: +(p === 'spot'), neutral: +(p === 'neutral' || (p !== 'back' && p !== 'spot')) };
+  const first = fl.first, kw = first || p !== 'auto' ? 1 : 1 - Math.exp(-dt / 1.0), k = first ? 1 : 1 - Math.exp(-dt / 0.25);
+  if (!fl.wts) fl.wts = tw; else for (const q in tw) fl.wts[q] += kw * (tw[q] - fl.wts[q]);
+  fl.P = FL.params(fl.wts, o.flStrength);
+  for (let c = 0; c < 3; c++) if (isFinite(cap[c])) fl.cap[c] += k * (cap[c] - fl.cap[c]);
+  if (isFinite(mid)) fl.mid += k * (mid - fl.mid);
+  fl.veil = st.veil; fl.st = st; fl.first = false;
+}
+/** Un occhio: livelli smorzati → LUT; contrasti misurati sulla grezza (pr) e sulla filtrata (pf). */
+function flEye(fl, i, e, box, pa, pr, pf, dt) {
+  const lv = eyeUsable(e) ? FL.levels(pa, e, box) : null;
+  if (!lv) { fl.eyeOk[i] = false; fl.lv[i] = null; fl.eyeC[i] = null; return; }
+  const k = fl.lv[i] ? 1 - Math.exp(-dt / 0.15) : 1;
+  fl.lv[i] = fl.lv[i] ? fl.lv[i].map((v, j) => (v == null || lv[j] == null ? lv[j] : v + k * (lv[j] - v))) : lv.slice();
+  const L = FL.curve(fl.lv[i][0], fl.lv[i][1], fl.lv[i][2], fl.lv[i][3]);
+  for (let t = 0; t < 256; t++) fl.lut8[i][t] = Math.round(clamp(L[t], 0, 1) * 255);
+  fl.eyeOk[i] = true;
+  const ctr = l => (l ? { pi: 255 * (l[1] - l[0]), is: 255 * ((l[2] == null ? l[3] : l[2]) - l[1]) } : null);
+  fl.eyeC[i] = { raw: ctr(FL.levels(pr, e, box)), out: ctr(FL.levels(pf, e, box)) };
+}
+function flReport(fl) {
+  const mean = key => { const v = fl.eyeC.filter(c => c && c[key]).map(c => c[key]); return v.length ? { pi: v.reduce((s, x) => s + x.pi, 0) / v.length, is: v.reduce((s, x) => s + x.is, 0) / v.length } : null; };
+  return { w: Object.assign({}, fl.wts), P: Object.assign({}, fl.P), veil: fl.veil, cap: fl.cap.slice(), mid: fl.mid, scene: fl.st, eyes: fl.lv.map(x => x && x.slice()), eyeAmt: fl.eyeAmt.slice(), eyeRaw: mean('raw'), eyeOut: mean('out') };
+}
+/** Filtri separabili sulla griglia 1/4 (motore CPU): minimo o media su ±r, bordo replicato. */
+function sepMin(src, dst, W, H, r, horiz) {
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    let m = Infinity;
+    for (let k = -r; k <= r; k++) { const v = horiz ? src[y * W + clamp(x + k, 0, W - 1)] : src[clamp(y + k, 0, H - 1) * W + x]; if (v < m) m = v; }
+    dst[y * W + x] = m;
+  }
+}
+function sepBox(src, dst, W, H, r, horiz) {
+  const n = 2 * r + 1, L = horiz ? W : H, M = horiz ? H : W;
+  for (let j = 0; j < M; j++) {
+    const at = i => (horiz ? src[j * W + clamp(i, 0, W - 1)] : src[clamp(i, 0, H - 1) * W + j]);
+    let s = 0; for (let k = -r; k <= r; k++) s += at(k);
+    for (let i = 0; i < L; i++) { dst[horiz ? j * W + i : i * W + j] = s / n; s += at(i + r + 1) - at(i - r); }
+  }
+}
+// codice GLSL comune: tono del volto e maschera degli occhi (uscita e patch occhi devono calcolare la stessa cosa)
+const FLC = `uniform sampler2D uFV, uFAB, uEyeLut; uniform vec3 uCap; uniform float uFw, uMidFL, uTgt, uCs, uCh, uKd, uKnee;
+uniform vec4 uE0, uE1; uniform vec2 uEyeAmt, uSizePx;
+float toL(float y){ return log2(clamp(y, 0., 1.)*255. + 1.)*0.125; }
+float fromL(float l){ return (exp2(l*8.) - 1.)/255.; }
+vec3 dehaze(vec3 c, vec3 v){ v = min(v, uCap)*uFw; vec3 J = clamp((c - v)/max(1. - v, vec3(0.4)), 0., 1.);
+  return mix(J, c, clamp((max(c.r, max(c.g, c.b)) - 0.92)/0.07, 0., 1.)); }      // zone bruciate: restano come sono
+float faceTone(vec2 uv, vec3 c, float midAdj, out vec3 J, out float Y){
+  J = dehaze(c, texture(uFV, uv).rgb); Y = dot(J, vec3(.2126, .7152, .0722));
+  float lf = toL(Y); vec2 ab = texture(uFAB, uv).rg; float base = ab.x*lf + ab.y, det = lf - base;
+  float d = base - (uMidFL + midAdj), s = 0.5 + 0.5*tanh(d/0.04);
+  float y = fromL(toL(uTgt) + d*(uCs + (uCh - uCs)*s) + uKd*det*clamp((abs(det) - 0.006)/0.012, 0., 1.));
+  if (y > uKnee) y = uKnee + (1. - uKnee)*(1. - exp(-(y - uKnee)/(1. - uKnee)));
+  return clamp(y, 0., 1.); }
+float eyeMask(vec2 p, vec4 e){ vec2 d = (p - e.xy)/e.zw; float m = clamp((1. - dot(d, d))/0.6, 0., 1.); return m*m*(3. - 2.*m); }
+float eyes(vec2 uv, float y, out float em){
+  vec2 p = vec2(uv.x, 1. - uv.y)*uSizePx;      // pixel con y verso il basso, come i landmark
+  float m0 = uEyeAmt.x > 0. ? eyeMask(p, uE0)*uEyeAmt.x : 0., m1 = uEyeAmt.y > 0. ? eyeMask(p, uE1)*uEyeAmt.y : 0., t = (y*255. + 0.5)/256.;
+  if (m0 > 0.) y = mix(y, texture(uEyeLut, vec2(t, 0.25)).r, m0);
+  if (m1 > 0.) y = mix(y, texture(uEyeLut, vec2(t, 0.75)).r, m1);
+  em = max(m0, m1); return y; }
+`;
+
+
+/* ---------------------------------------------------------------- GPU */
+const VS = `#version 300 es
+in vec2 p; out vec2 uv; void main(){ uv = p*0.5+0.5; gl_Position = vec4(p,0.,1.); }`;
+const FH = `#version 300 es
+precision highp float; precision highp sampler2D; in vec2 uv; out vec4 o;
+`;
+const FS = {
+  // ---- FaceLight, griglia 1/4 ----
+  // media 4×4 del colore ripulito (4 campioni bilineari)
+  flq: `uniform sampler2D uDen; uniform vec2 uPx;
+void main(){ vec2 c = gl_FragCoord.xy*4.0; vec3 s = vec3(0.);
+  for (int j=-1;j<=1;j+=2) for (int i=-1;i<=1;i+=2) s += texture(uDen, (c+vec2(i,j))*uPx).gba;
+  o = vec4(s*0.25, 1.); }`,
+  // minimo locale su ±R celle in una direzione (velo del flare: il punto più scuro vicino), bordo replicato
+  erode: `uniform sampler2D uS; uniform vec2 uDir, uSize; uniform float uR;
+void main(){ ivec2 p = ivec2(gl_FragCoord.xy), d = ivec2(uDir), mx = ivec2(uSize) - 1; int R = int(uR + 0.5); vec4 m = texelFetch(uS, p, 0);
+  for (int i = 1; i <= 16; i++){ if (i > R) break; m = min(m, min(texelFetch(uS, clamp(p + d*i, ivec2(0), mx), 0), texelFetch(uS, clamp(p - d*i, ivec2(0), mx), 0))); }
+  o = m; }`,
+  // media su ±R celle in una direzione, bordo replicato
+  boxf: `uniform sampler2D uS; uniform vec2 uDir, uSize; uniform float uR;
+void main(){ ivec2 p = ivec2(gl_FragCoord.xy), d = ivec2(uDir), mx = ivec2(uSize) - 1; int R = int(uR + 0.5); vec4 s = texelFetch(uS, p, 0);
+  for (int i = 1; i <= 16; i++){ if (i > R) break; s += texelFetch(uS, clamp(p + d*i, ivec2(0), mx), 0) + texelFetch(uS, clamp(p - d*i, ivec2(0), mx), 0); }
+  o = s/float(2*R + 1); }`,
+  // luminanza senza velo in log, centrata (L-0.6): le somme dei quadrati restano precise anche a 16 bit
+  flg: FLC + `uniform sampler2D uQ;
+void main(){ ivec2 p = ivec2(gl_FragCoord.xy); vec3 J = dehaze(texelFetch(uQ, p, 0).rgb, texelFetch(uFV, p, 0).rgb);
+  float d = toL(dot(J, vec3(.2126, .7152, .0722))) - 0.6; o = vec4(d, d*d, 0., 1.); }`,
+  // coefficienti del filtro guidato: a = var/(var+eps), b = media·(1-a)
+  flab: `uniform sampler2D uM; uniform float uEps;
+void main(){ vec4 m = texelFetch(uM, ivec2(gl_FragCoord.xy), 0); float v = max(m.g - m.r*m.r, 0.), a = v/(v + uEps), mI = m.r + 0.6;
+  o = vec4(a, mI - a*mI, 0., 1.); }`,
+  // per la CPU: velo per canale e base, cella per cella
+  flstat: FLC + `uniform sampler2D uG;
+void main(){ ivec2 p = ivec2(gl_FragCoord.xy); vec2 ab = texelFetch(uFAB, p, 0).rg; o = vec4(texelFetch(uFV, p, 0).rgb, ab.x*(texelFetch(uG, p, 0).r + 0.6) + ab.y); }`,
+  // patch degli occhi (48×32 ciascuno, affiancati): tono del volto, grezza, uscita con LUT. Riga 0 = alto della patch.
+  // Di giorno (media temporale spenta) la patch si legge dal video a risoluzione nativa: con l'elaborazione a 360 px
+  // pupilla e iride restano misurabili. Velo e base vengono dalla griglia 1/4, che non dipende dalla risoluzione.
+  fleye: FLC + `uniform sampler2D uDen, uMix, uMean, uVid; uniform vec4 uP0, uP1; uniform float uRefFL, uNat;
+void main(){ float fx = gl_FragCoord.x; bool b = fx >= ${EYE_W}.; vec4 P = b ? uP1 : uP0;
+  vec2 p = vec2(P.x + ((b ? fx - ${EYE_W}. : fx)/${EYE_W}.)*(P.z - P.x), P.y + (gl_FragCoord.y/${EYE_H}.)*(P.w - P.y)), q = vec2(p.x, uSizePx.y - p.y)/uSizePx;
+  float midAdj = uRefFL > 0. ? clamp(toL(texelFetch(uMean, ivec2(0), 0).r) - toL(uRefFL), -0.25, 0.25) : 0.;
+  vec3 c = uNat > 0.5 ? texture(uVid, q).rgb : max(texture(uDen, q).gba, 0.), r = uNat > 0.5 ? c : texture(uMix, q).gba;
+  vec3 J; float Y, em; float y = faceTone(q, c, midAdj, J, Y);
+  o = vec4(y, dot(r, vec3(.2126, .7152, .0722)), eyes(q, y, em), 1.); }`,
+
+  // riduzione per aree (4 campioni bilineari: è già un primo binning). Uscita: segnale in .r, colore in .gba
+  mix: `uniform sampler2D uVid; uniform vec3 uW; uniform vec2 uTap;
+void main(){ vec3 c = vec3(0.);
+  for (int j=-1;j<=1;j+=2) for (int i=-1;i<=1;i+=2) c += texture(uVid, uv+vec2(i,j)*uTap).rgb;
+  c *= 0.25; o = vec4(dot(c,uW), c); }`,
+  // differenza media per blocco 4×4 tra fotogramma e storia (4 campioni bilineari = 16 pixel)
+  diff: `uniform sampler2D uMix, uAcc; uniform vec2 uPx;
+void main(){ vec2 c = gl_FragCoord.xy*4.0; float d = 0.;
+  for (int j=-1;j<=1;j+=2) for (int i=-1;i<=1;i+=2){ vec2 q = (c+vec2(i,j))*uPx; d += texture(uMix,q).r - texture(uAcc,q).r; }
+  o = vec4(d*0.25, 0., 0., 1.); }`,
+  // movimento per blocco: differenza del blocco oppure media con segno dei 3×3 vicini (variazioni deboli
+  // ma estese, come una palpebra poco contrastata), poi dilatazione 3×3. Uscita: età, alfa.
+  motion: `uniform sampler2D uD, uLow; uniform vec2 uSize; uniform float uThr, uThr9, uRef, uAMin, uReset;
+float D(ivec2 p){ return texelFetch(uD, clamp(p, ivec2(0), ivec2(uSize)-1), 0).r; }
+float M(ivec2 p){ p = clamp(p, ivec2(0), ivec2(uSize)-1); float s = 0.;
+  for (int j=-1;j<=1;j++) for (int i=-1;i<=1;i++) s += D(p+ivec2(i,j));
+  float d = max(abs(D(p))/uThr, abs(s)/(9.*uThr9)), age = max(1., texelFetch(uLow,p,0).r);
+  return d / sqrt((1.+1./age)/uRef); }
+void main(){ ivec2 p = ivec2(gl_FragCoord.xy); float m = 0.;
+  for (int j=-1;j<=1;j++) for (int i=-1;i<=1;i++) m = max(m, M(p+ivec2(i,j)));
+  float age = max(1., texelFetch(uLow,p,0).r), a = max(uAMin, 1./(age+1.));
+  if (m >= 2.) a = 1.; else if (m > 1.) a += (1.-a)*(m-1.);
+  if (uReset > 0.5) a = 1.;
+  o = vec4(1./a, a, m, 1.); }`,
+  // media ricorsiva in virgola mobile: mediare il rumore recupera frazioni di livello
+  temporal: `uniform sampler2D uMix, uAcc, uLow;
+void main(){ vec4 m = texture(uMix,uv), a = texture(uAcc,uv); o = a + texture(uLow,uv).g*(m-a); }`,      // .r segnale, .gba colore
+  // sfocatura a 4 campioni bilineari; con passo 1 è una binomiale 3×3, con passi maggiori copre le macchie di rumore
+  blur: `uniform sampler2D uSrc; uniform vec2 uPx; uniform float uAmt, uStep;
+void main(){ vec4 c = texture(uSrc,uv), b = vec4(0.);
+  for (int j=-1;j<=1;j+=2) for (int i=-1;i<=1;i+=2) b += texture(uSrc, uv+vec2(i,j)*0.5*uStep*uPx);
+  o = mix(c, b*0.25, uAmt); }`,
+  // griglia ridotta letta dalla CPU: segnale ripulito, luminanza (negativa se hotspot), differenza, alfa
+  stats: `uniform sampler2D uDen, uMix, uD, uLow; uniform vec2 uPx; uniform float uHot;
+void main(){ vec2 c = gl_FragCoord.xy*4.0; float den = 0., y = 0., mx = 0.;
+  for (int j=-1;j<=1;j+=2) for (int i=-1;i<=1;i+=2){ vec2 q = (c+vec2(i,j))*uPx; den += texture(uDen,q).r; vec3 m = texture(uMix,q).gba; y += dot(m,vec3(.2126,.7152,.0722)); mx = max(mx, max(m.r,max(m.g,m.b))); }
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  o = vec4(den*0.25, (mx >= uHot ? -1. : 1.)*max(y*0.25, 1e-5), texelFetch(uD,p,0).r, texelFetch(uLow,p,0).g); }`,
+  copy: `uniform sampler2D uMix; void main(){ o = vec4(texture(uMix, uv).gba, 1.); }`,
+  // media del segnale nella zona di misura del fotogramma corrente: 8×8 campioni, poi un solo valore
+  mean8: `uniform sampler2D uDen; uniform vec4 uRoi;
+void main(){ vec2 cell = (uRoi.zw-uRoi.xy)/8.0, c = uRoi.xy + cell*gl_FragCoord.xy; float s = 0.;
+  for (int j=-1;j<=1;j+=2) for (int i=-1;i<=1;i+=2) s += texture(uDen, c+vec2(i,j)*0.25*cell).r;
+  o = vec4(s*0.25, 0., 0., 1.); }`,
+  mean1: `uniform sampler2D uM;
+void main(){ float s = 0.; for (int j=0;j<8;j++) for (int i=0;i<8;i++) s += texelFetch(uM, ivec2(i,j), 0).r; o = vec4(s/64., 0., 0., 1.); }`,
+  // uscita. Notte (e profilo classico): nitidezza → livelli → CLAHE → colore, come la 0.9.3.
+  // Giorno: FaceLight (velo → base compressa intorno al volto → dettaglio → spalla → occhi → colore). Fusione con uFL.
+  out: FLC + `uniform sampler2D uSrc, uMix, uLut, uMean; uniform vec2 uPx; uniform float uRef;
+uniform float uMode, uLo, uSpan, uGam, uSharp, uCore, uClahe, uTiles, uColor, uHot, uFL, uSatFL, uRefFL;
+float L(float t, float tx, float ty){ return texture(uLut, vec2((t*255.+0.5)/256., (ty*uTiles+tx+0.5)/(uTiles*uTiles))).r; }
+void main(){
+  vec3 c = texture(uMix, uv).gba;
+  if (uMode > 1.5){ float mx = max(c.r,max(c.g,c.b)); o = vec4(uMode > 2.5 ? (mx >= uHot ? vec3(1.,.16,.16) : c*0.3) : c, 1.); return; }
+  vec4 sv = texture(uSrc, uv); vec3 g3 = vec3(0.);
+  if (uFL < 0.999) { float v = sv.r;
+    if (uSharp > 0.){ float b1 = 0., b2 = 0.;      // banda fine (≈1,5 px) e banda media (≈4 px): bordi di palpebre e iride
+      for (int j=-1;j<=1;j+=2) for (int i=-1;i<=1;i+=2){ b1 += texture(uSrc, uv+vec2(i,j)*1.5*uPx).r; b2 += texture(uSrc, uv+vec2(i,j)*4.0*uPx).r; }
+      float d1 = v - b1*0.25, d2 = b1*0.25 - b2*0.25;    // sotto la soglia è rumore: non si amplifica
+      v += uSharp*(d1*smoothstep(uCore, 3.*uCore, abs(d1)) + 0.5*d2*smoothstep(uCore, 3.*uCore, abs(d2))); }
+    // Salto di luce (lampioni, fari, galleria): i livelli calcolati dalla CPU arrivano uno o due fotogrammi dopo.
+    // Nel frattempo il segnale viene riportato alla luminosità per cui erano stati calcolati; entro ±15% non si tocca.
+    if (uRef > 0.){ float q = uRef / max(texelFetch(uMean, ivec2(0), 0).r, 1e-4); v *= clamp(q < 0.87 ? q*1.15 : q > 1.15 ? q/1.15 : 1., 0.2, 2.5); }
+    float t = pow(clamp((v-uLo)/uSpan, 0., 1.), uGam);
+    if (uClahe > 0.){ vec2 g = uv*uTiles-0.5, t0 = clamp(floor(g), 0., uTiles-1.), t1 = min(t0+1., uTiles-1.), f = clamp(g-t0, 0., 1.);
+      t = mix(t, mix(mix(L(t,t0.x,t0.y), L(t,t1.x,t0.y), f.x), mix(L(t,t0.x,t1.y), L(t,t1.x,t1.y), f.x), f.y), uClahe); }
+    g3 = vec3(t);
+    if (uColor > 0.){ float y = max(sv.r, 2e-3); vec3 cc = max(sv.gba, 0.)*(t/y); float mx = max(cc.r, max(cc.g, cc.b));
+      if (mx > 1.) cc = t + (cc-t)*((1.-t)/max(mx-t, 1e-4));
+      g3 = mix(g3, clamp(cc, 0., 1.), uColor); }
+  }
+  if (uFL > 0.) {
+    // salto di luce: la base del volto calcolata dalla CPU arriva in ritardo; nel frattempo la si sposta della variazione misurata ora
+    float midAdj = uRefFL > 0. ? clamp(toL(texelFetch(uMean, ivec2(0), 0).r) - toL(uRefFL), -0.25, 0.25) : 0.;
+    vec3 J; float Y, em; float y = eyes(uv, faceTone(uv, max(sv.gba, 0.), midAdj, J, Y), em);
+    vec3 C = J*(y/max(Y, 2e-3)); C = y + uSatFL*(1. - 0.3*em)*(C - y);      // negli occhi un po' meno colore (lenti colorate)
+    float mx = max(C.r, max(C.g, C.b)); if (mx > 1.) C = y + (C - y)*((1. - y)/max(mx - y, 1e-4));
+    g3 = mix(g3, clamp(C, 0., 1.), uFL); }
+  o = vec4(g3, 1.); }`
+};
+
+class GPU {
+  constructor(opts) {
+    this.kind = 'gpu';
+    this.o = Object.assign({}, DEFAULTS, opts || {});
+    this.canvas = document.createElement('canvas');
+    const gl = this.canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: false, powerPreference: 'high-performance' });
+    if (!gl) throw new Error('WebGL2 non disponibile');
+    this.gl = gl;
+    this.f32 = !!gl.getExtension('EXT_color_buffer_float');      // texture 32 bit per il filtro guidato (somme di quadrati)
+    if (!this.f32 && !gl.getExtension('EXT_color_buffer_half_float')) throw new Error('texture float non scrivibili su questa GPU');
+    this.canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); this.lost = true; });
+    this.P = {}; for (const k in FS) this.P[k] = this._prog(FS[k]);
+    const vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    this.info = { engine: 'gpu', renderer: String(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER)) };
+    this.active = true; this.stats = blankStats(); this._roi = null; this._eyes = null; this._wts = null; this._night = null; this.W = 0; this.H = 0;
+    this.rawSource = null;
+    // prova: una texture float deve poter essere scritta e riletta
+    const t = this._tex(4, 4, true), f = this._fbo(t);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('framebuffer float incompleto');
+    gl.readPixels(0, 0, 4, 4, gl.RGBA, gl.FLOAT, new Float32Array(64));
+    if (gl.getError() !== gl.NO_ERROR) throw new Error('lettura float non supportata');
+    gl.deleteFramebuffer(f); gl.deleteTexture(t);
+    this.reset();
+  }
+  _prog(fs) {
+    const gl = this.gl, mk = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error('shader: ' + gl.getShaderInfoLog(s)); return s; };
+    const p = gl.createProgram(); gl.attachShader(p, mk(gl.VERTEX_SHADER, VS)); gl.attachShader(p, mk(gl.FRAGMENT_SHADER, FH + fs));
+    gl.bindAttribLocation(p, 0, 'p'); gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('link: ' + gl.getProgramInfoLog(p));
+    return { p, u: {} };
+  }
+  _tex(w, h, float, filter, f32) {
+    const gl = this.gl, t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+    if (float && f32) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, w, h, 0, gl.RGBA, gl.FLOAT, null);
+    else if (float) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+    else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    const f = filter || gl.LINEAR;
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, f); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, f);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  }
+  _fbo(t) { const gl = this.gl, f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0); return f; }
+  _draw(P, fbo, w, h, tex, num) {
+    const gl = this.gl; gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.viewport(0, 0, w, h); gl.useProgram(P.p);
+    const loc = n => (n in P.u ? P.u[n] : (P.u[n] = gl.getUniformLocation(P.p, n)));
+    let unit = 0;
+    for (const n in tex) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex[n]); gl.uniform1i(loc(n), unit++); }
+    for (const n in num) { const v = num[n]; if (typeof v === 'number') gl.uniform1f(loc(n), v); else if (v.length === 2) gl.uniform2f(loc(n), v[0], v[1]); else if (v.length === 3) gl.uniform3f(loc(n), v[0], v[1], v[2]); else gl.uniform4f(loc(n), v[0], v[1], v[2], v[3]); }
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  set(opts) { Object.assign(this.o, opts); return this; }
+  /** Zona su cui misurare livelli e luminosità, normalizzata [x0,y0,x1,y1] (y verso il basso); null = centro. */
+  setROI(roi) { this._roi = roi; }
+  /** Occhi dal rilevatore, in pixel del fotogramma elaborato: [{ contour: [[x,y]×16], iris: [x,y], r }, …] oppure null. */
+  setEyes(eyes) { this._eyes = eyes && eyes.length === 2 ? eyes : null; }
+  /** Dimentica la storia temporale (cambio scena, cambio fotocamera). */
+  reset() { this._n = 0; this._sD = NaN; this._sD9 = NaN; this._lo = NaN; this._hi = NaN; this._med = NaN; this._lutReady = false; this._lv = { lo: 0, span: 255, ge: 1, gain: 1, need: 1 }; this._t = null; this._refMean = 0; this._fl = flState(this.o); this._flW = 0; }
+  /** Adatta le dimensioni alla sorgente (larghezza massima maxW) mantenendone le proporzioni. Vero se sono cambiate. */
+  fit(source, maxW) {
+    const sw = source.videoWidth || source.naturalWidth || source.width, sh = source.videoHeight || source.naturalHeight || source.height;
+    if (!sw || !sh) return false;
+    const k = Math.min(1, maxW / Math.min(sw, sh)), W = Math.round(sw * k) & ~3, H = Math.round(sh * k) & ~3;      // maxW è il lato corto
+    if (W === this.W && H === this.H) return false;
+    this.resize(W, H); return true;
+  }
+  /** Dimensioni di elaborazione, multiple di 4. */
+  resize(W, H) {
+    const gl = this.gl; W &= ~3; H &= ~3;
+    if (W === this.W && H === this.H) { this.reset(); return; }
+    this.W = W; this.H = H; this.canvas.width = W; this.canvas.height = H;
+    const LW = this.LW = W >> 2, LH = this.LH = H >> 2, T = this.o.tiles;
+    const mk = (w, h, filter) => { const t = this._tex(w, h, true, filter); return { t, f: this._fbo(t) }; };
+    this.tVid = this._tex(4, 4, false);
+    this.mix = mk(W, H); this.acc = [mk(W, H), mk(W, H)]; this.tmp = [mk(W, H), mk(W, H)];
+    this.dif = mk(LW, LH, gl.NEAREST); this.low = [mk(LW, LH), mk(LW, LH)]; this.stat = mk(LW, LH, gl.NEAREST);
+    const tr = this._tex(16, 16, false, gl.NEAREST); this.rgbT = { t: tr, f: this._fbo(tr) };
+    this.m8 = mk(8, 8, gl.NEAREST); this.m1 = mk(1, 1, gl.NEAREST);
+    this.tLut = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, this.tLut);
+    this.lut8 = new Uint8Array(256 * T * T); for (let i = 0; i < this.lut8.length; i++) this.lut8[i] = i & 255;
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, 256, T * T, 0, gl.RED, gl.UNSIGNED_BYTE, this.lut8);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.S = new Float32Array(LW * LH * 4); this.rgb = new Uint8Array(16 * 16 * 4);
+    // FaceLight: griglia 1/4 (le somme del filtro guidato a 32 bit se possibile), velo e coefficienti filtrabili, patch occhi
+    const mkF = (w, h) => { const t = this._tex(w, h, true, gl.NEAREST, this.f32); return { t, f: this._fbo(t) }; };
+    this.fQ = mkF(LW, LH); this.fT = [mkF(LW, LH), mkF(LW, LH)]; this.fG = mkF(LW, LH);
+    this.fV = mk(LW, LH); this.fAB = mk(LW, LH); this.fS = mk(LW, LH, gl.NEAREST); this.fE = mk(2 * EYE_W, EYE_H, gl.NEAREST);
+    this.tEye = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, this.tEye);
+    this.eyeLut8 = new Uint8Array(512); for (let i = 0; i < 512; i++) this.eyeLut8[i] = i & 255;
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, 256, 2, 0, gl.RED, gl.UNSIGNED_BYTE, this.eyeLut8);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.S2 = new Float32Array(LW * LH * 4); this.E = new Float32Array(2 * EYE_W * EYE_H * 4); this._flScratch = new Float32Array(LW * LH * 8);
+    // lettura asincrona delle statistiche: la GPU scrive in un buffer che la CPU ritira un fotogramma dopo, senza fermarsi
+    if (this._sync) { gl.deleteSync(this._sync); this._sync = null; }
+    this.pbo = gl.createBuffer(); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.pbo); gl.bufferData(gl.PIXEL_PACK_BUFFER, LW * LH * 32 + 1024 + 2 * EYE_W * EYE_H * 16, gl.STREAM_READ); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    this._frame = 0; this._tOn = false;
+    this.yhist = new Uint32Array(256); this.dhist = new Uint32Array(256); this.d9hist = new Uint32Array(256); this.hist = new Uint32Array(HB); this.hhot = new Uint32Array(HB); this.toneLut = new Float32Array(HB);
+    this.thist = new Float32Array(256); this.tlut = new Float32Array(T * T * 256);
+    this.cur = 0; this.lcur = 0; this._den = this.acc[0].t;
+    this.reset();
+  }
+
+  /** Elabora un fotogramma (video, canvas o immagine). Il risultato è in this.canvas. */
+  process(source, tMs) {
+    const gl = this.gl, o = this.o, t0 = now();
+    if (this.lost) return this.stats;
+    if (o.procW > 0) this.fit(source, o.procW);
+    const W = this.W, H = this.H, LW = this.LW, LH = this.LH, px = [1 / W, 1 / H];
+    if (!W) return this.stats;
+    this.rawSource = source;
+    const tNow = tMs == null ? t0 : tMs; this._dt = this._t == null ? 0.066 : clamp((tNow - this._t) / 1000, 0.005, 0.5); this._t = tNow;
+    const st = this.stats; st.msStats = 0;
+    this._poll();                                         // statistiche chieste nei fotogrammi precedenti
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.tVid);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+
+    this.active = st.active = o.mode !== 'off';
+    const e = this.eff = effective(o, this._night || 0, this._lv.need), N = e.temporal, aMin = 2 / (N + 1);
+    const tOn = this.active && N > 1;                     // di giorno la media temporale è spenta: si saltano tre passaggi
+    if (!tOn) this._n = 0;
+    const warm = this._n < 3;
+    // distanza dei 4 campioni in base al rapporto di riduzione: nulla a 1:1, media 2×2 esatta a 2:1
+    const sw = source.videoWidth || source.naturalWidth || source.width || W, sh = source.videoHeight || source.naturalHeight || source.height || H;
+    const tap = [clamp((sw / W - 1) / 2, 0, 1) / sw, clamp((sh / H - 1) / 2, 0, 1) / sh];
+    this._draw(this.P.mix, this.mix.f, W, H, { uVid: this.tVid }, { uW: this._w || [1 / 3, 1 / 3, 1 / 3], uTap: tap });
+    let den = this.mix.t;
+    if (tOn) {
+      const accOld = this.acc[this.cur], accNew = this.acc[1 - this.cur], lowOld = this.low[this.lcur], lowNew = this.low[1 - this.lcur];
+      this._draw(this.P.diff, this.dif.f, LW, LH, { uMix: this.mix.t, uAcc: accOld.t }, { uPx: px });
+      this._draw(this.P.motion, lowNew.f, LW, LH, { uD: this.dif.t, uLow: lowOld.t },
+        { uSize: [LW, LH], uThr: this._sD > 0 ? (o.motionK * this._sD + 0.02) / 255 : 1e3, uThr9: this._sD9 > 0 ? (o.motionK * this._sD9 + 0.01) / 255 : 1e3, uRef: 1 + aMin, uAMin: aMin, uReset: warm ? 1 : 0 });
+      this._draw(this.P.temporal, accNew.f, W, H, { uMix: this.mix.t, uAcc: accOld.t, uLow: lowNew.t }, {});
+      this.cur = 1 - this.cur; this.lcur = 1 - this.lcur;
+      den = accNew.t; this._n++;
+    }
+    if (this.active) for (let i = 0; i < 3 && e.spatialF - i > 0.02; i++) {      // ogni passata è una binomiale 3×3; l'ultima può essere parziale
+      const dst = this.tmp[i & 1]; this._draw(this.P.blur, dst.f, W, H, { uSrc: den }, { uPx: px, uAmt: Math.min(1, e.spatialF - i), uStep: 1 + 2 * i }); den = dst.t;
+    }
+    this._den = den;
+    // FaceLight: passaggi sulla griglia 1/4 a ogni fotogramma (la base deve seguire il volto), parametri dalla CPU
+    this._flW = this.active && o.flProfile !== 'classic' && o.mode !== 'manual' ? 1 - (this._night || 0) : 0;
+    if (this._flW > 0.001) this._faceLight(den); else this.stats.fl = null;
+    { const k = 1 - Math.exp(-this._dt / 0.2), fl = this._fl;
+      for (let i = 0; i < 2; i++) fl.eyeAmt[i] += k * ((this._flW > 0.001 && this._eyes && fl.eyeOk[i] && eyeUsable(this._eyes[i]) ? +o.eyeBoost || 0 : 0) - fl.eyeAmt[i]); }
+    if (this.active) { const r = this._roi || o.roi;      // nella texture l'asse y è capovolto rispetto all'immagine
+      this._draw(this.P.mean8, this.m8.f, 8, 8, { uDen: den }, { uRoi: [r[0], 1 - r[3], r[2], 1 - r[1]] });
+      this._draw(this.P.mean1, this.m1.f, 1, 1, { uM: this.m8.t }, {}); }
+    const first = this._frame < 3 || (tOn && warm) || this._late;     // all'avvio (o se la GPU non risponde) lettura diretta
+    this._since = (this._since || 0) + this._dt;
+    const every = this._dt > 0.045 ? 1 : Math.max(1, o.statsEvery | 0);     // a pochi FPS si misura a ogni fotogramma: la reazione ai cambi di luce non deve dipendere dalla frequenza
+    if (first || (!this._sync && this._frame % every === 0)) {
+      const ts = now();
+      this._draw(this.P.stats, this.stat.f, LW, LH, { uDen: den, uMix: this.mix.t, uD: this.dif.t, uLow: this.low[this.lcur].t }, { uPx: px, uHot: o.hot / 255 });
+      this._draw(this.P.copy, this.rgbT.f, 16, 16, { uMix: this.mix.t }, {});
+      const fl = this._flW > 0.001 ? this._flStatsDraw(den) : null;
+      const ctx = { N, aMin, e, tOn: tOn && this._n > 1, dt: Math.min(0.5, this._since), fl }; this._since = 0;
+      if (first || !this.pbo) {
+        if (this._sync) { gl.deleteSync(this._sync); this._sync = null; }
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.stat.f); gl.readPixels(0, 0, LW, LH, gl.RGBA, gl.FLOAT, this.S);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.rgbT.f); gl.readPixels(0, 0, 16, 16, gl.RGBA, gl.UNSIGNED_BYTE, this.rgb);
+        if (fl) { gl.bindFramebuffer(gl.FRAMEBUFFER, this.fS.f); gl.readPixels(0, 0, LW, LH, gl.RGBA, gl.FLOAT, this.S2);
+          if (fl.eyes) { gl.bindFramebuffer(gl.FRAMEBUFFER, this.fE.f); gl.readPixels(0, 0, 2 * EYE_W, EYE_H, gl.RGBA, gl.FLOAT, this.E); } }
+        this._control(ctx); this._late = false;
+      } else {
+        gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.pbo);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.stat.f); gl.readPixels(0, 0, LW, LH, gl.RGBA, gl.FLOAT, 0);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.rgbT.f); gl.readPixels(0, 0, 16, 16, gl.RGBA, gl.UNSIGNED_BYTE, LW * LH * 16);
+        if (fl) { gl.bindFramebuffer(gl.FRAMEBUFFER, this.fS.f); gl.readPixels(0, 0, LW, LH, gl.RGBA, gl.FLOAT, LW * LH * 16 + 1024);
+          if (fl.eyes) { gl.bindFramebuffer(gl.FRAMEBUFFER, this.fE.f); gl.readPixels(0, 0, 2 * EYE_W, EYE_H, gl.RGBA, gl.FLOAT, LW * LH * 32 + 1024); } }
+        gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+        this._sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0); this._ctx = ctx; this._wait = 0;
+      }
+      st.msStats += now() - ts;
+    }
+    this.present(this.active ? 'main' : 'raw');
+    gl.flush();
+    this._frame++;
+    st.night = this._night || 0; st.eff = e; st.ms = now() - t0;
+    return st;
+  }
+  /** Ritira le statistiche quando la GPU ha finito, senza aspettarla. */
+  _poll() {
+    if (!this._sync) return;
+    const gl = this.gl, ts = now(), r = gl.clientWaitSync(this._sync, 0, 0);
+    if (r === gl.TIMEOUT_EXPIRED) { if (++this._wait > 8) { gl.deleteSync(this._sync); this._sync = null; this._late = true; } return; }
+    gl.deleteSync(this._sync); this._sync = null;
+    if (r === gl.WAIT_FAILED) { this.pbo = null; return; }      // da qui in poi lettura diretta
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.pbo);
+    gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, this.S); gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, this.LW * this.LH * 16, this.rgb);
+    if (this._ctx && this._ctx.fl) { gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, this.LW * this.LH * 16 + 1024, this.S2);
+      if (this._ctx.fl.eyes) gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, this.LW * this.LH * 32 + 1024, this.E); }
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    this._control(this._ctx);
+    this.stats.msStats += now() - ts;
+  }
+
+  /** Statistiche dalla griglia ridotta → pesi, soglia di movimento, livelli, mappe CLAHE. */
+  _control({ N, aMin, e, tOn, dt, fl: flc }) {
+    const gl = this.gl, o = this.o, S = this.S, LW = this.LW, LH = this.LH, st = this.stats, nb = LW * LH;
+    const r = this._roi || o.roi;
+    const x0 = clamp(Math.floor(r[0] * LW), 0, LW - 2), x1 = clamp(Math.ceil(r[2] * LW), x0 + 2, LW);
+    const y0 = clamp(Math.floor(r[1] * LH), 0, LH - 2), y1 = clamp(Math.ceil(r[3] * LH), y0 + 2, LH);
+    const yh = this.yhist, hist = this.hist, hhot = this.hhot; yh.fill(0); hist.fill(0); hhot.fill(0);
+    let sy = 0, cnt = 0, black = 0, hotc = 0, hn = 0;
+    for (let yi = y0; yi < y1; yi++) {
+      let k = ((LH - 1 - yi) * LW + x0) * 4;                 // la riga 0 letta dalla GPU è quella in basso
+      for (let x = x0; x < x1; x++, k += 4) {
+        const yv = S[k + 1], Y = Math.abs(yv) * 255; sy += Y; cnt++; yh[Y > 255 ? 255 : (Y + 0.5) | 0]++;
+        if (Y <= 5) black++;
+        const b = (S[k] * 1020) | 0, bin = b > HB - 1 ? HB - 1 : b < 0 ? 0 : b;
+        if (yv < 0) { hotc++; hhot[bin]++; } else { hist[bin]++; hn++; }
+      }
+    }
+    // pochi hotspot = riflessi dei LED, da ignorare; tanti = volto sovraesposto, da contare nei livelli
+    if (hotc > 0.03 * cnt) { for (let k = 0; k < HB; k++) hist[k] += hhot[k]; hn += hotc; }
+    st.meanY = sy / cnt; st.p95 = percentile(yh, cnt, 0.95); st.blackPct = 100 * black / cnt; st.hotPct = 100 * hotc / cnt;
+    let fy = 0; for (let k = 1, e4 = nb * 4; k < e4; k += 4) fy += Math.abs(S[k]); st.frameY = 255 * fy / nb;      // tutto il fotogramma
+    const cx0 = clamp(Math.floor(r[0] * 16), 0, 15), cx1 = clamp(Math.ceil(r[2] * 16), cx0 + 1, 16), cy0 = clamp(Math.floor(r[1] * 16), 0, 15), cy1 = clamp(Math.ceil(r[3] * 16), cy0 + 1, 16);
+    let sr = 0, sg = 0, sb = 0, cn = 0;
+    for (let yi = cy0; yi < cy1; yi++) for (let x = cx0; x < cx1; x++) { const k = ((15 - yi) * 16 + x) * 4; sr += this.rgb[k]; sg += this.rgb[k + 1]; sb += this.rgb[k + 2]; cn++; }
+    st.meanR = sr / cn; st.meanG = sg / cn; st.meanB = sb / cn;
+    this._w = channelWeights(this, o, st.meanR, st.meanG, st.meanB).slice(); st.weights = this._w;
+    st.signal = this._w[0] * st.meanR + this._w[1] * st.meanG + this._w[2] * st.meanB;      // con luce rossa la luminanza inganna: conta il canale usato
+    { const mn = Math.min(st.meanR, st.meanG, st.meanB), mx = Math.max(st.meanR, st.meanG, st.meanB, 1), wh = clamp((mn / mx - 0.2) / 0.3, 0, 1); this._white = this._white == null ? wh : this._white + 0.2 * (wh - this._white); }
+    { let sm = 0, sn = 0; for (let yi = y0; yi < y1; yi++) for (let k = ((LH - 1 - yi) * LW + x0) * 4, e4 = k + (x1 - x0) * 4; k < e4; k += 4) { sm += S[k]; sn++; } this._refMean = sm / sn; }      // riferimento per la compensazione immediata
+    this._night = nightStep(o, this._night, st.signal, dt);
+    if (!this.active) return;
+
+    // rumore della differenza di blocco: mediana robusta, seguita velocemente in discesa e lentamente
+    // in salita, così un movimento globale non alza subito la soglia
+    if (!tOn) { st.sigmaRaw = null; st.stillPct = 0; st.nrDb = 0; }
+    else {
+      const dh = this.dhist; dh.fill(0); let vf = 0, still = 0;
+      for (let b = 0, k = 0; b < nb; b++, k += 4) {
+        const D = Math.abs(S[k + 2]) * 255, bin = (D * 32) | 0; dh[bin > 255 ? 255 : bin]++;
+        const a = S[k + 3]; vf += a <= aMin * 1.02 ? 1 / N : a; if (a < 0.6) still++;      // «ferma» = sta davvero mediando
+      }
+      // Rumore della media di 3×3 blocchi, misurato. Il rumore vero del sensore è a macchie: la media di 9 blocchi
+      // cala molto meno che con rumore bianco, e una soglia dedotta (σ/3) scambiava il rumore per movimento,
+      // azzerando di continuo la media nel tempo.
+      { const d9 = this.d9hist; d9.fill(0); let n9 = 0;
+        for (let y = 1; y < LH - 1; y += 2) for (let x = 1; x < LW - 1; x += 2) { let s9 = 0; for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) s9 += S[((y + j) * LW + x + i) * 4 + 2]; const bin = (Math.abs(s9) * (255 / 9) * 64) | 0; d9[bin > 255 ? 255 : bin]++; n9++; }
+        const t9 = clamp(1.4826 * (percentile(d9, n9, 0.5) + 0.5) / 64, 0.015, 4);
+        if (!(this._sD9 > 0)) this._sD9 = t9 / 1.3; else this._sD9 += (t9 < this._sD9 ? 0.3 : 0.03) * (t9 - this._sD9); }
+      const tgt = clamp(1.4826 * (percentile(dh, nb, 0.5) + 0.5) / 32, 0.03, 4);
+      if (!(this._sD > 0)) this._sD = tgt / 1.3; else this._sD += (tgt < this._sD ? 0.3 : 0.03) * (tgt - this._sD);
+      st.sigmaRaw = this._sD; st.stillPct = 100 * still / nb;
+      st.nrDb = -20 * Math.log10(Math.sqrt(vf / nb));      // solo la parte temporale: quella spaziale dipende da quanto il rumore è a macchie
+    }
+
+    const lv = this._lv = levels(this, o, hist, hn, dt, this._night || 0);
+    st.gain = lv.gain; st.need = lv.need; st.gammaExp = lv.ge; st.lo = lv.lo; st.hi = lv.lo + lv.span;
+    st.flW = this._flW;
+    if (flc && this._flW > 0.001) this._flControl(flc, dt);
+    // rumore residuo per pixel (0..1), per la soglia della nitidezza: dal rumore di blocco quando la media temporale è attiva
+    this._core = clamp((tOn && this._sD > 0 ? 3 * this._sD * Math.pow(10, -st.nrDb / 20) : 1) * 1.2 / 255, 0.0012, 0.02);
+    if (e.clahe > 0 && this._flW < 0.999) {      // di giorno pieno il CLAHE non si usa: si risparmia il calcolo
+      const tone = this.toneLut, T = o.tiles, tl = this.tlut, hg = this.thist, blend = this._lutReady ? 1 - Math.exp(-dt / 0.25) : 1, lut8 = this.lut8;
+      for (let k = 0; k < HB; k++) tone[k] = 255 * Math.pow(clamp((k / 4 - lv.lo) / lv.span, 0, 1), lv.ge);
+      for (let ty = 0; ty < T; ty++) for (let tx = 0; tx < T; tx++) {
+        const ax = Math.floor(tx * LW / T), bx = Math.floor((tx + 1) * LW / T), ay = Math.floor(ty * LH / T), by = Math.floor((ty + 1) * LH / T), count = (bx - ax) * (by - ay);
+        if (count <= 0) continue;
+        hg.fill(0);
+        for (let y = ay; y < by; y++) for (let k = (y * LW + ax) * 4, end = (y * LW + bx) * 4; k < end; k += 4) { const b = (S[k] * 1020) | 0; hg[(tone[b > HB - 1 ? HB - 1 : b < 0 ? 0 : b] + 0.5) | 0]++; }
+        const lim = Math.max(0.5, e.clahe * count / 256); let excess = 0;
+        for (let v = 0; v < 256; v++) if (hg[v] > lim) { excess += hg[v] - lim; hg[v] = lim; }
+        const each = excess / 256, base = (ty * T + tx) * 256; let cdf = 0;
+        for (let v = 0; v < 256; v++) { cdf += hg[v] + each; const i = base + v; tl[i] += blend * (255 * cdf / count - tl[i]); lut8[i] = tl[i] + 0.5; }
+      }
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.tLut);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 256, T * T, gl.RED, gl.UNSIGNED_BYTE, lut8);
+      this._lutReady = true;
+    } else this._lutReady = false;
+  }
+
+  /** Disegna in this.canvas: 'main' filtrata, 'gain' solo livelli, 'raw' ingresso, 'mask' hotspot. */
+  present(kind) {
+    const o = this.o, e = this.eff || effective(o, 0), lv = this._lv, main = kind === 'main', fl = this._fl, P = fl.P, flw = main && this._flW > 0.001 ? this._flW : 0;
+    this._draw(this.P.out, null, this.W, this.H,
+      { uSrc: kind === 'gain' ? this.mix.t : this._den, uMix: this.mix.t, uLut: this.tLut, uMean: this.m1.t, uFV: this.fV.t, uFAB: this.fAB.t, uEyeLut: this.tEye },
+      Object.assign({ uPx: [1 / this.W, 1 / this.H], uMode: kind === 'raw' ? 2 : kind === 'mask' ? 3 : 0, uLo: lv.lo / 255, uSpan: lv.span / 255, uGam: lv.ge,
+        uRef: this.active && o.tone !== 'manual' && this._refMean > 0 ? this._refMean : 0, uSharp: main ? e.sharpen : 0, uCore: this._core || 0.004, uClahe: main && e.clahe > 0 && this._lutReady ? e.claheAmt : 0, uTiles: o.tiles, uColor: e.color, uHot: o.hot / 255,
+        uFL: flw, uSatFL: P.sat }, this._flUniforms()));
+  }
+  _flUniforms() {
+    const fl = this._fl, P = fl.P, E = this._eyes, g = E ? E.map(x => FL.geometry(x)) : null;
+    return { uCap: fl.cap, uFw: P.w, uMidFL: fl.mid, uTgt: P.target, uCs: P.cs, uCh: P.ch, uKd: P.kd, uKnee: P.knee, uRefFL: fl.ref,
+      uE0: g ? g[0].ell : [0, 0, 1, 1], uE1: g ? g[1].ell : [0, 0, 1, 1], uEyeAmt: g ? [fl.eyeAmt[0], fl.eyeAmt[1]] : [0, 0], uSizePx: [this.W, this.H] };
+  }
+  /** FaceLight sulla griglia 1/4: velo (minimo locale + media), luminanza senza velo in log, filtro guidato. */
+  _faceLight(den) {
+    const LW = this.LW, LH = this.LH, sz = [LW, LH], fl = this._fl, r = this._roi || this.o.roi, rad = FL.radii(r, LW), er = rad[0], gr = rad[1], T = this.fT;
+    const pass = (prog, dst, tex, num) => this._draw(this.P[prog], dst.f, LW, LH, tex, num);
+    pass('flq', this.fQ, { uDen: den }, { uPx: [1 / this.W, 1 / this.H] });
+    pass('erode', T[0], { uS: this.fQ.t }, { uDir: [1, 0], uR: er, uSize: sz });
+    pass('erode', T[1], { uS: T[0].t }, { uDir: [0, 1], uR: er, uSize: sz });
+    pass('boxf', T[0], { uS: T[1].t }, { uDir: [1, 0], uR: er, uSize: sz });
+    pass('boxf', this.fV, { uS: T[0].t }, { uDir: [0, 1], uR: er, uSize: sz });
+    pass('flg', this.fG, { uQ: this.fQ.t, uFV: this.fV.t }, { uCap: fl.cap, uFw: fl.P.w });
+    pass('boxf', T[0], { uS: this.fG.t }, { uDir: [1, 0], uR: gr, uSize: sz });
+    pass('boxf', T[1], { uS: T[0].t }, { uDir: [0, 1], uR: gr, uSize: sz });
+    pass('flab', T[0], { uM: T[1].t }, { uEps: FL_EPS });
+    pass('boxf', T[1], { uS: T[0].t }, { uDir: [1, 0], uR: gr, uSize: sz });
+    pass('boxf', this.fAB, { uS: T[1].t }, { uDir: [0, 1], uR: gr, uSize: sz });
+  }
+  /** Statistiche FaceLight per la CPU: velo e base sulla griglia 1/4, patch degli occhi a piena risoluzione. */
+  _flStatsDraw(den) {
+    const LW = this.LW, LH = this.LH, E = this._eyes;
+    this._draw(this.P.flstat, this.fS.f, LW, LH, { uFV: this.fV.t, uFAB: this.fAB.t, uG: this.fG.t }, {});
+    const ctx = { roi: (this._roi || this.o.roi).slice(), eyes: null };
+    if (E) {
+      const g = E.map(x => FL.geometry(x));
+      this._draw(this.P.fleye, this.fE.f, 2 * EYE_W, EYE_H, { uDen: den, uMix: this.mix.t, uMean: this.m1.t, uFV: this.fV.t, uFAB: this.fAB.t, uEyeLut: this.tEye, uVid: this.tVid },
+        Object.assign(this._flUniforms(), { uP0: g[0].box, uP1: g[1].box, uNat: this._n === 0 ? 1 : 0 }));
+      ctx.eyes = E.map((x, i) => ({ e: x, g: g[i] }));
+    }
+    return ctx;
+  }
+  /** Dalla griglia letta: profilo, velo massimo, mediana della base sul volto, LUT degli occhi. */
+  _flControl(c, dt) {
+    const LW = this.LW, LH = this.LH, S = this.S, S2 = this.S2, fl = this._fl, o = this.o, nb = LW * LH;
+    const cell = (yi, x) => ((LH - 1 - yi) * LW + x) * 4;      // la riga 0 letta dalla GPU è quella in basso
+    flUpdate(fl, o, c.roi, LW, LH, (yi, x, v) => { const k = cell(yi, x); v[0] = Math.abs(S[k + 1]) * 255; v[1] = S[k + 1] < 0; v[2] = S2[k]; v[3] = S2[k + 1]; v[4] = S2[k + 2]; v[5] = S2[k + 3]; }, dt, this._flScratch);
+    fl.ref = this._refMean;
+    if (c.eyes) {
+      const pa = new Float32Array(EYE_W * EYE_H), pr = new Float32Array(EYE_W * EYE_H), pf = new Float32Array(EYE_W * EYE_H);
+      c.eyes.forEach((x, i) => {
+        for (let j = 0; j < EYE_H; j++) for (let ii = 0; ii < EYE_W; ii++) { const k = (j * 2 * EYE_W + i * EYE_W + ii) * 4, q = j * EYE_W + ii; pa[q] = this.E[k]; pr[q] = this.E[k + 1]; pf[q] = this.E[k + 2]; }
+        flEye(fl, i, x.e, x.g.box, pa, pr, pf, dt);
+      });
+      for (let i = 0; i < 2; i++) this.eyeLut8.set(fl.lut8[i], 256 * i);
+      const gl = this.gl; gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.tEye);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 256, 2, gl.RED, gl.UNSIGNED_BYTE, this.eyeLut8);
+    }
+    this.stats.fl = flReport(fl);
+  }
+}
+
+/* ---------------------------------------------------------------- CPU (riserva) */
+const BS = 2;   // blocchi 4×4
+class CoreCPU {
+  constructor(o) { this.o = o; this.w = 0; this.h = 0; this.active = true; this.stats = blankStats(); this._roi = null; this._eyes = null; this._wts = null; this._night = null; this.reset(); }
+  reset() { this._n = 0; this._sig = 1; this._sD = 0; this._sD9 = 0; this._lo = NaN; this._hi = NaN; this._med = NaN; this._lutReady = false; this._fl = flState(this.o); }
+  _alloc(w, h) {
+    this.w = w; this.h = h; const n = w * h, T = this.o.tiles;
+    this.mix = new Float32Array(n); this.acc = new Float32Array(n); this.tmp = new Float32Array(n); this.den = new Float32Array(n); this.tone = new Uint8Array(n);
+    this.bw = (w + 3) >> BS; this.bh = (h + 3) >> BS; const nb = this.bw * this.bh;
+    this.bsum = new Float32Array(nb); this.bmot = new Float32Array(nb); this.bdif = new Float32Array(nb);
+    this.balpha = new Float32Array(nb).fill(1); this.age = new Float32Array(nb).fill(1); this.bcnt = new Float32Array(nb);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) this.bcnt[(y >> BS) * this.bw + (x >> BS)]++;
+    this.yhist = new Uint32Array(256); this.dhist = new Uint32Array(256); this.hist = new Uint32Array(HB); this.lut = new Uint8Array(HB);
+    this.thist = new Uint32Array(256); this.tlut = new Float32Array(T * T * 256);
+    this.tw = Math.ceil(w / T); this.th = Math.ceil(h / T);
+    this.cx0 = new Int32Array(w); this.cx1 = new Int32Array(w); this.cfx = new Float32Array(w);
+    for (let x = 0; x < w; x++) { const gx = (x + 0.5) / this.tw - 0.5, t0 = clamp(Math.floor(gx), 0, T - 1), t1 = Math.min(T - 1, t0 + 1); this.cx0[x] = t0 * 256; this.cx1[x] = t1 * 256; this.cfx[x] = clamp(gx - t0, 0, 1); }
+    this.reset();
+  }
+  process(src, w, h, dst) {
+    const t0 = now(), o = this.o;
+    if (w !== this.w || h !== this.h) this._alloc(w, h);
+    const n = w * h, mix = this.mix, acc = this.acc, hot = o.hot, roi = this._roi || o.roi;
+    const x0 = clamp(Math.floor(roi[0] * w), 0, w - 4), x1 = clamp(Math.ceil(roi[2] * w), x0 + 4, w);
+    const y0 = clamp(Math.floor(roi[1] * h), 0, h - 4), y1 = clamp(Math.ceil(roi[3] * h), y0 + 4, h);
+    const yh = this.yhist; yh.fill(0);
+    let sr = 0, sg = 0, sb = 0, sy = 0, cnt = 0, black = 0, hotc = 0;
+    for (let y = y0; y < y1; y += 2) { let i = (y * w + x0) * 4; for (let x = x0; x < x1; x += 2, i += 8) {
+      const R = src[i], G = src[i + 1], B = src[i + 2], Y = 0.2126 * R + 0.7152 * G + 0.0722 * B;
+      sr += R; sg += G; sb += B; sy += Y; cnt++; yh[(Y + 0.5) | 0]++; if (Y <= 5) black++; if (R >= hot || G >= hot || B >= hot) hotc++;
+    } }
+    const st = this.stats;
+    let fy = 0, fn = 0; for (let y = 4; y < h; y += 8) for (let i = (y * w + 4) * 4, e4 = (y * w + w) * 4; i < e4; i += 32) { fy += 0.2126 * src[i] + 0.7152 * src[i + 1] + 0.0722 * src[i + 2]; fn++; }
+    st.frameY = fy / fn;
+    st.meanY = sy / cnt; st.meanR = sr / cnt; st.meanG = sg / cnt; st.meanB = sb / cnt; st.p95 = percentile(yh, cnt, 0.95); st.blackPct = 100 * black / cnt; st.hotPct = 100 * hotc / cnt;
+    const dt = this._dt || 0.066, wt0 = this._wts || [1 / 3, 1 / 3, 1 / 3];
+    st.signal = wt0[0] * st.meanR + wt0[1] * st.meanG + wt0[2] * st.meanB;
+    this._night = nightStep(o, this._night, st.signal, dt);
+    const e = effective(o, this._night, this._need); e.spatial = Math.min(2, Math.round(e.spatialF)); st.night = this._night; st.eff = e;
+    this.active = st.active = o.mode !== 'off';
+    if (!this.active) { if (dst !== src) dst.set(src); this._n = 0; st.ms = now() - t0; return st; }
+    const wt = channelWeights(this, o, st.meanR, st.meanG, st.meanB), wr = wt[0], wg = wt[1], wb = wt[2]; st.weights = wt.slice();
+
+    if (this._n > 0) {   // rumore per pixel: mediana robusta della differenza tra fotogrammi
+      const dh = this.dhist; dh.fill(0); let dn = 0, dsum = 0;
+      for (let y = y0 + 1; y < y1; y += 3) { let q = y * w + x0 + 1, i = q * 4; for (let x = x0 + 1; x < x1; x += 3, q += 3, i += 12) {
+        const d = Math.abs(wr * src[i] + wg * src[i + 1] + wb * src[i + 2] - mix[q]); dsum += d; dn++; const b = (d * 8) | 0; dh[b > 255 ? 255 : b]++; } }
+      const med = percentile(dh, dn, 0.5) / 8; let s = med > 0 ? 1.4826 * med / Math.SQRT2 : 0.8862 * dsum / dn; if (s < 0.3) s = 0.3;
+      this._sig += (this._n === 1 ? 1 : 0.2) * (s - this._sig);
+    }
+    const bw = this.bw, bh = this.bh, nb = bw * bh, bsum = this.bsum; bsum.fill(0);
+    for (let y = 0, q = 0, i = 0; y < h; y++) { const br = (y >> BS) * bw; for (let x = 0; x < w; x++, q++, i += 4) { const v = wr * src[i] + wg * src[i + 1] + wb * src[i + 2]; mix[q] = v; bsum[br + (x >> BS)] += v - acc[q]; } }
+
+    const N = e.temporal, aMin = 2 / (N + 1), age = this.age, bm = this.bmot, bd = this.bdif, ba = this.balpha, bc = this.bcnt;
+    let still = 0, vf = 0;
+    if (this._n === 0 || N === 1) { acc.set(mix); age.fill(1); ba.fill(1); vf = nb; }
+    else {
+      const dh = this.dhist; dh.fill(0);
+      for (let b = 0; b < nb; b++) { const D = bsum[b] / bc[b]; bd[b] = D; const k = (Math.abs(D) * 32) | 0; dh[k > 255 ? 255 : k]++; }
+      const tgt = clamp(1.4826 * (percentile(dh, nb, 0.5) + 0.5) / 32, 0.7 * this._sig / 4, this._sig);
+      if (!(this._sD > 0)) this._sD = tgt; else this._sD += (tgt < this._sD ? 0.3 : 0.03) * (tgt - this._sD);
+      const thr = o.motionK * this._sD + 0.02, ref = 1 + aMin, b9 = this.bsum;      // bsum non serve più: riusato per le medie 3×3
+      dh.fill(0);
+      for (let by = 0, b = 0; by < bh; by++) { const ya = by > 0 ? -bw : 0, yb = by < bh - 1 ? bw : 0; for (let bx = 0; bx < bw; bx++, b++) {
+        const xa = bx > 0 ? -1 : 0, xb = bx < bw - 1 ? 1 : 0;
+        const s9 = Math.abs(bd[b] + bd[b + xa] + bd[b + xb] + bd[b + ya] + bd[b + yb] + bd[b + ya + xa] + bd[b + ya + xb] + bd[b + yb + xa] + bd[b + yb + xb]) / 9;
+        b9[b] = s9; const k = (s9 * 64) | 0; dh[k > 255 ? 255 : k]++;
+      } }
+      // soglia sulla media 3×3 misurata: con rumore a macchie quella dedotta (σ/3) scambia il rumore per movimento
+      const t9 = clamp(1.4826 * (percentile(dh, nb, 0.5) + 0.5) / 64, 0.015, 4);
+      if (!(this._sD9 > 0)) this._sD9 = t9; else this._sD9 += (t9 < this._sD9 ? 0.3 : 0.03) * (t9 - this._sD9);
+      const thr9 = o.motionK * this._sD9 + 0.01;
+      for (let b = 0; b < nb; b++) { const d1 = Math.abs(bd[b]) / thr, d9 = b9[b] / thr9; bm[b] = (d1 > d9 ? d1 : d9) / Math.sqrt((1 + 1 / age[b]) / ref); }
+      for (let by = 0, b = 0; by < bh; by++) { const ya = by > 0 ? -bw : 0, yb = by < bh - 1 ? bw : 0; for (let bx = 0; bx < bw; bx++, b++) {
+        const xa = bx > 0 ? -1 : 0, xb = bx < bw - 1 ? 1 : 0;
+        const m = Math.max(bm[b], bm[b + xa], bm[b + xb], bm[b + ya], bm[b + yb], bm[b + ya + xa], bm[b + ya + xb], bm[b + yb + xa], bm[b + yb + xb]);
+        let a = Math.max(aMin, 1 / (age[b] + 1));
+        if (m >= 2) a = 1; else if (m > 1) a += (1 - a) * (m - 1); else still++;
+        ba[b] = a; age[b] = 1 / a; vf += a <= aMin ? 1 / N : a;
+      } }
+      for (let y = 0, q = 0; y < h; y++) { const br = (y >> BS) * bw; for (let x = 0; x < w; x++, q++) acc[q] += ba[br + (x >> BS)] * (mix[q] - acc[q]); }
+    }
+    this._n++; st.sigmaRaw = this._sD > 0 ? this._sD : null; st.stillPct = 100 * still / nb;
+
+    let den = acc; const passes = e.spatial;
+    if (passes > 0) {
+      den = this.den; const tmp = this.tmp;
+      for (let p = 0; p < passes; p++) {
+        const P = p === 0 ? acc : den;
+        for (let y = 0; y < h; y++) { const r = y * w; tmp[r] = (3 * P[r] + P[r + 1]) * 0.25; for (let x = 1; x < w - 1; x++) tmp[r + x] = (P[r + x - 1] + 2 * P[r + x] + P[r + x + 1]) * 0.25; tmp[r + w - 1] = (P[r + w - 2] + 3 * P[r + w - 1]) * 0.25; }
+        for (let y = 0; y < h; y++) { const r = y * w, u = y > 0 ? r - w : r, d = y < h - 1 ? r + w : r; for (let x = 0; x < w; x++) den[r + x] = (tmp[u + x] + 2 * tmp[r + x] + tmp[d + x]) * 0.25; }
+      }
+    }
+    st.nrDb = -20 * Math.log10(Math.sqrt(vf / nb) * (passes === 0 ? 1 : passes === 1 ? 0.375 : 0.273));
+
+    const hist = this.hist, skipHot = st.hotPct <= 3; hist.fill(0); let hn = 0;   // pochi hotspot = riflessi da ignorare; tanti = sovraesposizione
+    if (o.tone !== 'manual') for (let y = y0; y < y1; y += 2) { let q = y * w + x0, i = q * 4; for (let x = x0; x < x1; x += 2, q += 2, i += 8) {
+      if (skipHot && (src[i] >= hot || src[i + 1] >= hot || src[i + 2] >= hot)) continue; const k = (den[q] * 4) | 0; hist[k > HB - 1 ? HB - 1 : k]++; hn++; } }
+    const lv = levels(this, o, hist, hn, dt, this._night || 0), lut = this.lut; this._need = lv.need; st.need = lv.need;
+    for (let k = 0; k < HB; k++) lut[k] = 255 * Math.pow(clamp((k / 4 - lv.lo) / lv.span, 0, 1), lv.ge) + 0.5;
+    st.gain = lv.gain; st.gammaExp = lv.ge; st.lo = lv.lo; st.hi = lv.lo + lv.span;
+
+    const out = new Uint32Array(dst.buffer, dst.byteOffset, n), tone = this.tone;
+    if (e.clahe <= 0) { for (let q = 0; q < n; q++) { const k = (den[q] * 4) | 0, g = lut[k > HB - 1 ? HB - 1 : k]; out[q] = 0xFF000000 | (g << 16) | (g << 8) | g; } this._lutReady = false; }
+    else {
+      const T = o.tiles, tw = this.tw, th = this.th, tl = this.tlut, hg = this.thist, blend = this._lutReady ? 0.4 : 1;
+      for (let ty = 0; ty < T; ty++) for (let tx = 0; tx < T; tx++) {
+        const ax = tx * tw, ay = ty * th, bx = Math.min(w, ax + tw), by = Math.min(h, ay + th), count = (bx - ax) * (by - ay); if (count <= 0) continue;
+        hg.fill(0);
+        for (let y = ay; y < by; y++) for (let q = y * w + ax, end = y * w + bx; q < end; q++) { const k = (den[q] * 4) | 0, g = lut[k > HB - 1 ? HB - 1 : k]; tone[q] = g; hg[g]++; }
+        const lim = Math.max(1, e.clahe * count / 256); let excess = 0;
+        for (let v = 0; v < 256; v++) if (hg[v] > lim) { excess += hg[v] - lim; hg[v] = lim; }
+        const each = excess / 256, base = (ty * T + tx) * 256; let cdf = 0;
+        for (let v = 0; v < 256; v++) { cdf += Math.min(hg[v], lim) + each; tl[base + v] += blend * (255 * cdf / count - tl[base + v]); }
+      }
+      this._lutReady = true;
+      const cx0 = this.cx0, cx1 = this.cx1, cfx = this.cfx, amt = e.claheAmt;
+      for (let y = 0, q = 0; y < h; y++) {
+        const gy = (y + 0.5) / th - 0.5, t0 = clamp(Math.floor(gy), 0, T - 1), t1 = Math.min(T - 1, t0 + 1), fy = clamp(gy - t0, 0, 1), ra = t0 * T * 256, rb = t1 * T * 256;
+        for (let x = 0; x < w; x++, q++) {
+          const v = tone[q], fx = cfx[x], a = tl[ra + cx0[x] + v], b = tl[ra + cx1[x] + v], c = tl[rb + cx0[x] + v], d = tl[rb + cx1[x] + v];
+          const top = a + (b - a) * fx, g = (v + amt * (top + (c + (d - c) * fx - top) * fy - v) + 0.5) | 0;
+          out[q] = 0xFF000000 | (g << 16) | (g << 8) | g;
+        }
+      }
+    }
+    const flW = o.flProfile !== 'classic' && o.mode !== 'manual' ? 1 - (this._night || 0) : 0; st.flW = flW;
+    if (flW > 0.001) this._faceLight(src, w, h, dst, flW, dt); else st.fl = null;
+    st.ms = now() - t0;
+    return st;
+  }
+  /** FaceLight su CPU: stessi passaggi del motore GPU (griglia 1/4, filtro guidato, occhi), a colori.
+   *  Le statistiche sono quelle dello stesso fotogramma. Il risultato si fonde con quello notturno secondo flW. */
+  _faceLight(src, w, h, dst, flW, dt) {
+    const o = this.o, LW = w >> 2, LH = h >> 2, nq = LW * LH, n = w * h, roi = this._roi || o.roi, fl = this._fl;
+    if (!this._F || this._F.w !== w || this._F.h !== h) {
+      const A = () => new Float32Array(nq);
+      this._F = { w, h, q: [A(), A(), A()], v: [A(), A(), A()], t1: A(), t2: A(), Ld: A(), a: A(), b: A(), J: new Float32Array(3 * n), Y: new Float32Array(n), Yo: new Float32Array(n), buf: new Float32Array(nq * 8),
+        gx: new Int32Array(2 * w), fx: new Float32Array(w), gy: new Int32Array(2 * h), fy: new Float32Array(h) };
+      const F = this._F, tab = (N, L, g, f) => { for (let x = 0; x < N; x++) { const c = (x + 0.5) / 4 - 0.5, i0 = Math.floor(c); g[2 * x] = clamp(i0, 0, L - 1); g[2 * x + 1] = clamp(i0 + 1, 0, L - 1); f[x] = c - i0; } };
+      tab(w, LW, F.gx, F.fx); tab(h, LH, F.gy, F.fy);
+    }
+    const F = this._F, q = F.q, V = F.v, T1 = F.t1, T2 = F.t2, P0 = fl.P, rad = FL.radii(roi, LW), er = rad[0], gr = rad[1];
+    // medie 4×4 e velo (minimo locale per canale, poi media)
+    for (let c = 0; c < 3; c++) q[c].fill(0);
+    for (let y = 0; y < LH * 4; y++) { const qr = (y >> 2) * LW; for (let x = 0, i = y * w * 4; x < LW * 4; x++, i += 4) { const k = qr + (x >> 2); q[0][k] += src[i]; q[1][k] += src[i + 1]; q[2][k] += src[i + 2]; } }
+    for (let c = 0; c < 3; c++) { const a = q[c]; for (let k = 0; k < nq; k++) a[k] /= 16 * 255; sepMin(a, T1, LW, LH, er, true); sepMin(T1, T2, LW, LH, er, false); sepBox(T2, T1, LW, LH, er, true); sepBox(T1, V[c], LW, LH, er, false); }
+    const hotT = o.hot / 255, P = fl.P, cap = fl.cap;
+    // luminanza senza velo in log (centrata) e filtro guidato
+    const dz = (c, v, cp, wv) => { const vv = Math.min(v, cp) * wv; return clamp((c - vv) / Math.max(1 - vv, 0.4), 0, 1); };
+    for (let k = 0; k < nq; k++) {
+      const r = q[0][k], g = q[1][k], b = q[2][k], mx = Math.max(r, g, b), kk = clamp((mx - 0.92) / 0.07, 0, 1);
+      let jr = dz(r, V[0][k], cap[0], P.w), jg = dz(g, V[1][k], cap[1], P.w), jb = dz(b, V[2][k], cap[2], P.w);
+      jr += kk * (r - jr); jg += kk * (g - jg); jb += kk * (b - jb);
+      F.Ld[k] = toL(0.2126 * jr + 0.7152 * jg + 0.0722 * jb) - 0.6; T2[k] = F.Ld[k] * F.Ld[k];
+    }
+    sepBox(F.Ld, T1, LW, LH, gr, true); sepBox(T1, F.a, LW, LH, gr, false);      // media
+    sepBox(T2, T1, LW, LH, gr, true); sepBox(T1, F.b, LW, LH, gr, false);        // media dei quadrati
+    for (let k = 0; k < nq; k++) { const m = F.a[k], v = Math.max(F.b[k] - m * m, 0), a = v / (v + FL_EPS), mI = m + 0.6; F.a[k] = a; F.b[k] = mI - a * mI; }
+    sepBox(F.a, T1, LW, LH, gr, true); sepBox(T1, F.a, LW, LH, gr, false); sepBox(F.b, T1, LW, LH, gr, true); sepBox(T1, F.b, LW, LH, gr, false);
+    // statistiche (stesso fotogramma) → profilo, velo massimo, base del volto
+    flUpdate(fl, o, roi, LW, LH, (yi, x, out) => { const k = yi * LW + x, r = q[0][k], g = q[1][k], b = q[2][k];
+      out[0] = (0.2126 * r + 0.7152 * g + 0.0722 * b) * 255; out[1] = Math.max(r, g, b) >= hotT; out[2] = V[0][k]; out[3] = V[1][k]; out[4] = V[2][k]; out[5] = F.a[k] * (F.Ld[k] + 0.6) + F.b[k]; }, dt, F.buf);
+    const Pn = fl.P, tgt = toL(Pn.target), knee = Pn.knee, cp = fl.cap, J = F.J, Yb = F.Y, Yo = F.Yo, gx = F.gx, gy = F.gy, fxs = F.fx, fys = F.fy;
+    // per pixel, primo passaggio: velo, base, dettaglio, spalla
+    const bil = (A, ya, yb, xa, xb, fx, fy) => { const t = A[ya + xa] + (A[ya + xb] - A[ya + xa]) * fx; return t + (A[yb + xa] + (A[yb + xb] - A[yb + xa]) * fx - t) * fy; };
+    for (let y = 0, p = 0; y < h; y++) {
+      const ya = gy[2 * y] * LW, yb = gy[2 * y + 1] * LW, fy = fys[y];
+      for (let x = 0; x < w; x++, p++) {
+        const xa = gx[2 * x], xb = gx[2 * x + 1], fx = fxs[x], i = p * 4;
+        const r = src[i] / 255, g = src[i + 1] / 255, b = src[i + 2] / 255, mx = Math.max(r, g, b), kk = clamp((mx - 0.92) / 0.07, 0, 1);
+        let jr = dz(r, bil(V[0], ya, yb, xa, xb, fx, fy), cp[0], Pn.w), jg = dz(g, bil(V[1], ya, yb, xa, xb, fx, fy), cp[1], Pn.w), jb = dz(b, bil(V[2], ya, yb, xa, xb, fx, fy), cp[2], Pn.w);
+        jr += kk * (r - jr); jg += kk * (g - jg); jb += kk * (b - jb);
+        const Y = 0.2126 * jr + 0.7152 * jg + 0.0722 * jb, lf = toL(Y), base = bil(F.a, ya, yb, xa, xb, fx, fy) * lf + bil(F.b, ya, yb, xa, xb, fx, fy), det = lf - base, d = base - fl.mid, s = 0.5 + 0.5 * Math.tanh(d / 0.04);
+        let yo = (Math.pow(2, 8 * (tgt + d * (Pn.cs + (Pn.ch - Pn.cs) * s) + Pn.kd * det * clamp((Math.abs(det) - 0.006) / 0.012, 0, 1))) - 1) / 255;
+        if (yo > knee) yo = knee + (1 - knee) * (1 - Math.exp(-(yo - knee) / (1 - knee)));
+        J[3 * p] = jr; J[3 * p + 1] = jg; J[3 * p + 2] = jb; Yb[p] = Y; Yo[p] = clamp(yo, 0, 1);
+      }
+    }
+    // occhi: patch dal tono del volto, livelli → LUT; maschere ellittiche
+    const E = this._eyes, G = E ? E.map(e => FL.geometry(e)) : null, luts = [null, null];
+    const patch = (img, box) => { const pt = new Float32Array(EYE_W * EYE_H), bw = box[2] - box[0], bh = box[3] - box[1];
+      for (let j = 0; j < EYE_H; j++) for (let i = 0; i < EYE_W; i++) {
+        const X = clamp(box[0] + (i + 0.5) / EYE_W * bw - 0.5, 0, w - 1), Y = clamp(box[1] + (j + 0.5) / EYE_H * bh - 0.5, 0, h - 1), x0 = Math.floor(X), y0 = Math.floor(Y), x1 = Math.min(w - 1, x0 + 1), y1 = Math.min(h - 1, y0 + 1), ax = X - x0, ay = Y - y0;
+        const t = img(y0 * w + x0) + (img(y0 * w + x1) - img(y0 * w + x0)) * ax; pt[j * EYE_W + i] = t + (img(y1 * w + x0) + (img(y1 * w + x1) - img(y1 * w + x0)) * ax - t) * ay; }
+      return pt; };
+    const kE = 1 - Math.exp(-dt / 0.2);
+    for (let i = 0; i < 2; i++) {
+      if (E) { const pa = this._lastPatch = patch(p => Yo[p], G[i].box), pr = patch(p => (0.2126 * src[4 * p] + 0.7152 * src[4 * p + 1] + 0.0722 * src[4 * p + 2]) / 255, G[i].box);
+        flEye(fl, i, E[i], G[i].box, pa, pr, pa, dt); }
+      else { fl.eyeOk[i] = false; fl.lv[i] = null; fl.eyeC[i] = null; }
+      fl.eyeAmt[i] += kE * ((E && fl.eyeOk[i] && eyeUsable(E[i]) ? +o.eyeBoost || 0 : 0) - fl.eyeAmt[i]);
+      if (E && fl.eyeAmt[i] > 0.002) luts[i] = fl.lut8[i];
+      if (E && fl.eyeOk[i] && fl.eyeC[i]) {      // contrasto in uscita: LUT e maschera di questo fotogramma sulla stessa patch
+        const box = G[i].box, e = G[i].ell, L = fl.lut8[i], bw = box[2] - box[0], bh = box[3] - box[1], pa = this._lastPatch, pf = new Float32Array(pa.length);
+        for (let j = 0; j < EYE_H; j++) for (let ii = 0; ii < EYE_W; ii++) {
+          const q = j * EYE_W + ii, dx = (box[0] + (ii + 0.5) / EYE_W * bw - e[0]) / e[2], dy = (box[1] + (j + 0.5) / EYE_H * bh - e[1]) / e[3]; let m = clamp((1 - dx * dx - dy * dy) / 0.6, 0, 1);
+          m = m * m * (3 - 2 * m) * fl.eyeAmt[i]; const v = pa[q], tt = v * 255, t0 = Math.min(254, Math.floor(tt)); pf[q] = v + m * ((L[t0] + (L[t0 + 1] - L[t0]) * (tt - t0)) / 255 - v); }
+        const lo = FL.levels(pf, E[i], box); fl.eyeC[i].out = lo ? { pi: 255 * (lo[1] - lo[0]), is: 255 * ((lo[2] == null ? lo[3] : lo[2]) - lo[1]) } : null;
+      }
+    }
+    // per pixel, secondo passaggio: occhi e colore, fusione con il ramo notturno (grigio, già in dst)
+    const sat = Pn.sat, out = dst;
+    for (let y = 0, p = 0; y < h; y++) for (let x = 0; x < w; x++, p++) {
+      let yo = Yo[p], em = 0;
+      for (let i = 0; i < 2; i++) { if (!luts[i]) continue; const e = G[i].ell, dx = (x + 0.5 - e[0]) / e[2], dy = (y + 0.5 - e[1]) / e[3], rr = dx * dx + dy * dy; if (rr >= 1) continue;
+        let m = clamp((1 - rr) / 0.6, 0, 1); m = m * m * (3 - 2 * m) * fl.eyeAmt[i];
+        const tt = yo * 255, t0 = Math.min(254, Math.floor(tt)), L = luts[i], le = (L[t0] + (L[t0 + 1] - L[t0]) * (tt - t0)) / 255;
+        yo += m * (le - yo); if (m > em) em = m; }
+      const Y = Math.max(Yb[p], 2e-3), sk = sat * (1 - 0.3 * em);
+      let r = yo + sk * (J[3 * p] * yo / Y - yo), g = yo + sk * (J[3 * p + 1] * yo / Y - yo), b = yo + sk * (J[3 * p + 2] * yo / Y - yo);
+      const mx = Math.max(r, g, b); if (mx > 1) { const f = (1 - yo) / Math.max(mx - yo, 1e-4); r = yo + (r - yo) * f; g = yo + (g - yo) * f; b = yo + (b - yo) * f; }
+      const i = p * 4, k = flW;
+      out[i] = out[i] + k * (255 * r - out[i]); out[i + 1] = out[i + 1] + k * (255 * g - out[i + 1]); out[i + 2] = out[i + 2] + k * (255 * b - out[i + 2]); out[i + 3] = 255;      // Uint8ClampedArray: arrotonda e limita da sé
+    }
+    this.stats.fl = flReport(fl);
+  }
+
+  renderGainOnly(dst) {
+    const out = new Uint32Array(dst.buffer, dst.byteOffset, this.w * this.h), mix = this.mix, lut = this.lut;
+    for (let q = 0, n = this.w * this.h; q < n; q++) { const k = (mix[q] * 4) | 0, g = lut[k > HB - 1 ? HB - 1 : k]; out[q] = 0xFF000000 | (g << 16) | (g << 8) | g; }
+  }
+}
+/** Stessa interfaccia del motore GPU, attorno al nucleo CPU. */
+class CPU {
+  constructor(opts) {
+    this.kind = 'cpu'; this.o = Object.assign({}, DEFAULTS, opts || {});
+    this.core = new CoreCPU(this.o); this.info = { engine: 'cpu', renderer: 'JavaScript' };
+    this.canvas = document.createElement('canvas'); this.ctx = this.canvas.getContext('2d', { willReadFrequently: true });
+    this.rawSource = document.createElement('canvas'); this.rctx = this.rawSource.getContext('2d', { willReadFrequently: true });
+    this.W = 0; this.H = 0; this.stats = this.core.stats; this.active = true;
+  }
+  set(opts) { Object.assign(this.o, opts); return this; }
+  setROI(roi) { this.core._roi = roi; }
+  get _roi() { return this.core._roi; }
+  setEyes(eyes) { this.core._eyes = eyes && eyes.length === 2 ? eyes : null; }
+  get _eyes() { return this.core._eyes; }
+  reset() { this.core.reset(); }
+  resize(W, H) { W &= ~3; H &= ~3; if (W === this.W && H === this.H) { this.core.reset(); return; } this.W = W; this.H = H; for (const c of [this.canvas, this.rawSource]) { c.width = W; c.height = H; } this.out = this.ctx.createImageData(W, H); this.aux = this.ctx.createImageData(W, H); this.core.reset(); }
+  fit(source, maxW) {
+    const sw = source.videoWidth || source.naturalWidth || source.width, sh = source.videoHeight || source.naturalHeight || source.height;
+    if (!sw || !sh) return false;
+    const k = Math.min(1, maxW / Math.min(sw, sh)), W = Math.round(sw * k) & ~3, H = Math.round(sh * k) & ~3;      // maxW è il lato corto
+    if (W === this.W && H === this.H) return false;
+    this.resize(W, H); return true;
+  }
+  process(source, tMs) {
+    const t0 = now(); if (this.o.procW > 0) this.fit(source, this.o.procW);
+    const tNow = tMs == null ? t0 : tMs; this.core._dt = this._t == null ? 0.066 : clamp((tNow - this._t) / 1000, 0.005, 0.5); this._t = tNow;
+    this.rctx.drawImage(source, 0, 0, this.W, this.H); this.raw = this.rctx.getImageData(0, 0, this.W, this.H);
+    const st = this.core.process(this.raw.data, this.W, this.H, this.out.data); this.active = st.active;
+    this.ctx.putImageData(this.out, 0, 0); st.ms = now() - t0; return st;
+  }
+  present(kind) {
+    if (kind === 'main' || !this.raw) { this.ctx.putImageData(this.out, 0, 0); return; }
+    if (kind === 'gain' && this.active) { this.core.renderGainOnly(this.aux.data); this.ctx.putImageData(this.aux, 0, 0); return; }
+    if (kind === 'mask') { const d = this.raw.data, a = this.aux.data, hot = this.o.hot; for (let i = 0; i < d.length; i += 4) { const z = d[i] >= hot || d[i + 1] >= hot || d[i + 2] >= hot; a[i] = z ? 255 : d[i] * 0.3; a[i + 1] = z ? 40 : d[i + 1] * 0.3; a[i + 2] = z ? 40 : d[i + 2] * 0.3; a[i + 3] = 255; } this.ctx.putImageData(this.aux, 0, 0); return; }
+    this.ctx.putImageData(this.raw, 0, 0);
+  }
+}
+
+const IRFilter = {
+  VERSION: '0.10.1', DEFAULTS, GPU, CPU, effective, FACE_PROFILES, FL, eyeGeometry: e => FL.geometry(e),
+  /** Crea il motore migliore disponibile. prefer: 'gpu' (predefinito) o 'cpu'. */
+  create(opts, prefer) {
+    if (prefer !== 'cpu') { try { return new GPU(opts); } catch (e) { IRFilter.lastError = e.message; } }
+    return new CPU(opts);
+  }
+};
+root.IRFilter = IRFilter;
+})(window);
+</script>
+
+<!-- ======================================================================
+     Banco di prova: fotocamera, anteprima, metriche, prova A/B, archivio.
+     ====================================================================== -->
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const QS = new URLSearchParams(location.search);
+const video = $('video'), view = $('view'), vctx = view.getContext('2d');
+let engine = null, stream = null, track = null, running = false, frozen = false, mirror = true;
+let W = 0, H = 0, vfcSeen = false, vfcPending = false, lastTime = -1, fps = 0, frameDt = 0, lastFrameAt = 0, uiAt = 0, frameNo = 0, diag = null, wake = null;
+const tim = { filter: 0, detA: 0, detB: 0 };
+let redDisplayIllumination = false, camMinFps = 0;
+/** Frequenza richiesta al driver. Da 20 FPS in su con il minimo (se accettato all'avvio), altrimenti solo il massimo:
+ *  la scelta notturna dei 15 FPS del pilota automatico resta possibile. L'esposizione non viene mai bloccata. */
+async function applyFps(v) {
+  const cur = track.getSettings(), base = { width: { ideal: cur.width }, height: { ideal: cur.height } };      // senza larghezza e altezza il driver può cambiare formato
+  if (v >= 20 && camMinFps) { try { await track.applyConstraints({ ...base, frameRate: { ideal: v, min: Math.min(camMinFps, v), max: v } }); return; } catch (e) { /* minimo rifiutato: si ripiega */ } }
+  await track.applyConstraints({ ...base, frameRate: { ideal: v, max: v } });
+}
+const RED_DISPLAY_SPEC = { color: '#ff0000', rgb: [255, 0, 0], width: '100vw', height: '2cm', position: 'bottom', visibleLight: true };
+const ema = (k, v) => { tim[k] = tim[k] ? tim[k] + 0.15 * (v - tim[k]) : v; };
+const SESSION = new Date().toISOString();
+let archive = [];     // { kind: 'trial' | 'sample', session, data, img }
+
+const status = t => { $('status').textContent = t; };
+function download(name, blob) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 3000); }
+const fx = (x, d) => (x == null || !isFinite(x) ? '—' : x.toFixed(d));
+
+/* ---------- Motore ---------- */
+function makeEngine() {
+  const want = QS.get('engine') || $('engineSel').value;
+  engine = IRFilter.create({ ...readOpts(true), procW: +$('procW').value }, want);
+  $('engineSel').value = engine.kind;
+  if (want !== 'cpu' && engine.kind === 'cpu') status(`Motore GPU non disponibile (${IRFilter.lastError}). Uso il motore CPU, più lento.`);
+  if (W) engine.resize(W, H);
+}
+
+/* ---------- Fotocamera ---------- */
+async function start() {
+  try {
+    stop(true);
+    // Minimo di 20 FPS: in penombra Android tende a dimezzare da solo la frequenza (10-15 FPS) allungando l'esposizione.
+    // Con il minimo l'esposizione resta AUTOMATICA ma limitata a ~50 ms (il sensore compensa con l'ISO). Se il driver
+    // non ha un intervallo compatibile, getUserMedia fallirebbe: si riprova senza minimo. Mai exposureMode=manual.
+    const vc = { facingMode: { ideal: $('facing').value }, width: { ideal: 1280 }, height: { ideal: 720 } };
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { ...vc, frameRate: { ideal: 30, min: 20, max: 30 } } }); camMinFps = 20; }
+    catch (e) {
+      if (e.name !== 'OverconstrainedError' && e.name !== 'ConstraintNotSatisfiedError') throw e;
+      stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { ...vc, frameRate: { ideal: 30, max: 30 } } }); camMinFps = 0;
+      logEvent('fps-min', 'la fotocamera non accetta un minimo di 20 FPS: frequenza lasciata al driver');
+    }
+    video.srcObject = stream; await video.play();
+    track = stream.getVideoTracks()[0];
+    const s = track.getSettings();
+    mirror = (s.facingMode || $('facing').value) === 'user';
+    if (!engine) makeEngine();
+    sizeCanvases(); running = true; frozen = false; $('freeze').textContent = 'Blocca fotogramma'; pilot.reset(); guide.reset();
+    status(`Attiva · ${track.label || 'fotocamera'} · ${video.videoWidth}×${video.videoHeight} → ${W}×${H} · motore ${engine.kind.toUpperCase()} (${engine.info.renderer}) · esposizione ${s.exposureMode || 'automatica (non dichiarata)'}`);
+    try { wake = await navigator.wakeLock?.request('screen'); } catch (e) { /* facoltativo */ }
+    if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(onVideoFrame);
+    requestAnimationFrame(tick);
+    if (!ab.ready && QS.get('autoload') !== '0') setTimeout(() => ab.load(), 600);     // dopo qualche fotogramma, per poter misurare i tempi
+  } catch (e) { status(`Errore fotocamera: ${e.name}: ${e.message}`); }
+}
+function stop(silent) {
+  running = false;
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null; track = null; vfcSeen = false; vfcPending = false;
+  try { wake?.release(); } catch (e) { /* già rilasciato */ } wake = null;
+  if (silent !== true) status('Fotocamera arrestata.');
+}
+function sizeCanvases() {
+  const vw = video.videoWidth || 720, vh = video.videoHeight || 1280;
+  engine.set({ procW: +$('procW').value });      // il motore si ridimensiona da solo se la fotocamera cambia risoluzione
+  if (!engine.fit(video, +$('procW').value)) engine.reset();
+  W = engine.W; H = engine.H; ab.resetArms();
+}
+function onVideoFrame() { vfcSeen = true; vfcPending = true; if (running) video.requestVideoFrameCallback(onVideoFrame); }
+function tick() {
+  if (!running) return;
+  requestAnimationFrame(tick);
+  if (video.readyState < 2 || frozen) return;
+  // un'elaborazione per ogni fotogramma nuovo: i duplicati falserebbero rumore e media temporale
+  if (vfcSeen) { if (!vfcPending) return; vfcPending = false; }
+  else { if (video.currentTime === lastTime) return; lastTime = video.currentTime; }
+  if (engine.lost) { status('Contesto GPU perso: passo al motore CPU.'); $('engineSel').value = 'cpu'; QS.delete('engine'); makeEngine(); }
+  step();
+}
+
+/* ---------- Un fotogramma ---------- */
+const VIEW_BW = 'grayscale(1) brightness(2.8) contrast(1.2)';      // solo per l'occhio: non tocca l'immagine data al rilevatore
+function blit(c, dx, look) {
+  vctx.save(); if (look) vctx.filter = look;
+  if (mirror) { vctx.translate(dx + W, 0); vctx.scale(-1, 1); vctx.drawImage(c, 0, 0, W, H); } else vctx.drawImage(c, dx, 0, W, H);
+  vctx.restore();
+}
+function label(text, dx, color) {
+  vctx.font = '600 12px system-ui,Arial'; const tw = vctx.measureText(text).width;
+  vctx.fillStyle = 'rgba(8,16,24,.7)'; vctx.fillRect(dx + 6, H - 24, tw + 12, 18);
+  vctx.fillStyle = color; vctx.fillText(text, dx + 12, H - 11);
+}
+function step() {
+  const t = performance.now();
+  if (lastFrameAt) { const dtf = Math.max(1, t - lastFrameAt); frameDt = frameDt ? frameDt + 0.1 * (dtf - frameDt) : dtf; fps = 1000 / frameDt; }      // media degli intervalli: con fotogrammi alterni lunghi e brevi la media delle frequenze sovrastimava
+  lastFrameAt = t;
+  const st = engine.process(video);                       // al termine engine.canvas contiene la filtrata
+  if (engine.W !== W || engine.H !== H) { W = engine.W; H = engine.H; ab.resetArms(); logEvent('resize', `la fotocamera ora fornisce ${video.videoWidth}×${video.videoHeight}: elaborazione a ${W}×${H}`); }
+  ema('filter', performance.now() - t);
+  const vm = $('viewMode').value, look = (vm === 'sidebw' || vm === 'fltbw') && st.active ? VIEW_BW : null, mode = vm === 'sidebw' ? 'side' : vm === 'fltbw' ? 'flt' : vm, side = mode === 'side', vw = side ? W * 2 : W;
+  if (view.width !== vw || view.height !== H) { view.width = vw; view.height = H; }
+  const gainA = $('abArmA').value === 'gain' && st.active;
+  const stride = ab.ready ? Math.max(1, +$('abStride').value || 1) : 1, detFrame = frameNo % stride === 0;
+  let doA = ab.ready && detFrame, doB = doA;
+  if (doA && $('abPair').value === 'alt') { doA = (Math.floor(frameNo / stride) & 1) === 0; doB = !doA; }
+  ab.ts = Math.max(ab.ts + 1, Math.round(t));
+  let la = null, lb = null, srcA = engine.rawSource, usedGain = false;
+  // braccio A
+  if ((gainA && (doA || side)) || (mode === 'gain' && st.active)) { engine.present('gain'); srcA = engine.canvas; usedGain = true; }
+  if (side) blit(gainA ? engine.canvas : engine.rawSource, 0);
+  else if (mode === 'gain') blit(st.active ? engine.canvas : engine.rawSource, 0);
+  else if (mode === 'raw') blit(engine.rawSource, 0);
+  if (doA) { const t1 = performance.now(); la = ab.detect(0, gainA ? engine.canvas : engine.rawSource); ema('detA', performance.now() - t1); }
+  // braccio B
+  if (mode === 'mask') { engine.present('mask'); blit(engine.canvas, 0); usedGain = true; }
+  if (usedGain) engine.present('main');
+  if (side) blit(engine.canvas, W, look); else if (mode === 'flt' || mode === 'eyes') blit(engine.canvas, 0, look);
+  if (mode === 'eyes') drawEyeZoom();
+  if (doB) { const t1 = performance.now(); lb = ab.detect(1, engine.canvas); ema('detB', performance.now() - t1); }
+  if (ab.ready) { if (doA || doB) ab.account(doA, la, doB, lb, t); else ab.idle(t); }
+  if (ab.trial && $('rawSeq').value !== '0' && t >= ab.trial.burstAt && ab.trial.burst.length < +$('rawSeq').value) grabRaw(ab.trial.burst, t - ab.trial.t0);
+  // disegni sopra l'anteprima
+  if (side) {
+    ab.draw(ab.A, 0, '#ffb86b'); ab.draw(ab.B, W, '#68c7c0');
+    label(gainA ? 'A · SOLO GUADAGNO' : 'A · GREZZA', 0, '#ffb86b'); label(st.active ? 'B · FILTRATA' : 'B · FILTRO SPENTO', W, '#68c7c0');
+    vctx.fillStyle = '#2b3a49'; vctx.fillRect(W - 1, 0, 2, H);
+  } else if (mode === 'flt') ab.draw(ab.B, 0, '#68c7c0');
+  else if ((mode === 'raw' && !gainA) || (mode === 'gain' && gainA)) ab.draw(ab.A, 0, '#ffb86b');
+  frameNo++;
+  if (ab.pendingSave) { const rec = ab.pendingSave, seq = ab.pendingSeq; ab.pendingSave = null; saveRecord('trial', rec, seq).then(i => { $('abVerdict').textContent = `Prova ${i} · ${rec.condition} · ${rec.verdict}`; }); }
+  pilot.tick(st, t);
+  guide.tick(st, t, Math.min(0.5, (t - (guide.lastT || t)) / 1000) || 0.066); guide.lastT = t;
+  if (t - uiAt > 250) { uiAt = t; showMetrics(st); ab.show(); guide.show(); $('pilot').textContent = pilot.describe(st); }
+}
+// Zoom degli occhi: in alto la grezza, sotto la filtrata, un riquadro per occhio (stessa zona, stesso ingrandimento)
+function drawEyeZoom() {
+  const E = engine._eyes;
+  if (!E) { label('zoom occhi: in attesa dei landmark del rilevatore', 0, '#ffd28b'); return; }
+  const src = engine.rawSource, sw = src.videoWidth || src.width, sh = src.videoHeight || src.height, cw = W / 2, ch = cw / 2;
+  E.forEach((e, k) => {
+    const g = IRFilter.eyeGeometry(e), cx = g.ell[0], cy = g.ell[1], hw = Math.max(12, g.ell[2] * 1.35), hh = hw / 2, dx = (mirror ? 1 - k : k) * cw;
+    [[src, sw / W, sh / H], [engine.canvas, 1, 1]].forEach(([img, kx, ky], row) => {
+      vctx.save();
+      if (mirror) { vctx.translate(dx + cw, row * ch); vctx.scale(-1, 1); vctx.drawImage(img, (cx - hw) * kx, (cy - hh) * ky, 2 * hw * kx, 2 * hh * ky, 0, 0, cw, ch); }
+      else vctx.drawImage(img, (cx - hw) * kx, (cy - hh) * ky, 2 * hw * kx, 2 * hh * ky, dx, row * ch, cw, ch);
+      vctx.restore();
+    });
+  });
+  vctx.strokeStyle = '#2b3a49'; vctx.lineWidth = 2; vctx.strokeRect(0, 0, W, 2 * ch); vctx.beginPath(); vctx.moveTo(cw, 0); vctx.lineTo(cw, 2 * ch); vctx.moveTo(0, ch); vctx.lineTo(W, ch); vctx.stroke();
+  vctx.font = '600 11px system-ui,Arial';
+  for (const [t, y, c] of [['GREZZA', ch - 6, '#ffb86b'], ['FILTRATA', 2 * ch - 6, '#68c7c0']]) { vctx.fillStyle = 'rgba(8,16,24,.7)'; vctx.fillRect(4, y - 11, vctx.measureText(t).width + 8, 15); vctx.fillStyle = c; vctx.fillText(t, 8, y); }
+}
+const FL_NAMES = { back: 'controluce', spot: 'luce puntata', neutral: 'luce normale' };
+function showFaceLight(st) {
+  const f = st.fl, pc = x => Math.round(100 * x) + '%', lv = e => (e ? `${fx(e.pi, 0)} / ${fx(e.is, 0)}` : '—');
+  const on = st.active && st.flW > 0.001 && f;
+  $('mProf').textContent = on ? `${pc(f.w.back)} / ${pc(f.w.spot)} / ${pc(f.w.neutral)}` : engine.o.flProfile === 'classic' ? 'classico' : '—';
+  $('mEyeA').textContent = on ? lv(f.eyeRaw) : '—'; $('mEyeB').textContent = on ? lv(f.eyeOut) : '—';
+  $('aPI').textContent = on && f.eyeRaw ? fx(f.eyeRaw.pi, 0) : '—'; $('bPI').textContent = on && f.eyeOut ? fx(f.eyeOut.pi, 0) : '—';
+  $('aIS').textContent = on && f.eyeRaw ? fx(f.eyeRaw.is, 0) : '—'; $('bIS').textContent = on && f.eyeOut ? fx(f.eyeOut.is, 0) : '—';
+  const top = on ? Object.keys(f.w).reduce((a, b) => (f.w[b] > f.w[a] ? b : a)) : null, b = $('bProf');
+  b.textContent = on ? `${FL_NAMES[top]} ${pc(f.w[top])}` + (st.flW < 0.99 ? ` · ${pc(st.flW)} giorno` : '') : engine.o.flProfile === 'classic' ? 'profilo classico' : 'profilo spento (notte)';
+  b.className = 'badge ' + (on ? 'on' : 'off');
+  $('flNote').textContent = !st.active ? 'Filtro disattivato.' : engine.o.flProfile === 'classic' ? 'Profilo classico 0.9.3: livelli e CLAHE sul volto, nessun filtro volto.' : !on ? 'Filtri volto spenti: è notte, lavora il filtro notte.' :
+    `Profilo ${engine.o.flProfile === 'auto' ? 'automatico' : 'fisso'}: controluce ${pc(f.w.back)} · luce puntata ${pc(f.w.spot)} · normale ${pc(f.w.neutral)} · velo sul volto ${fx(f.veil, 0)} · volto portato a ${fx(f.P.target * 255, 0)}/255. ` +
+    (f.eyes.some(x => x) ? `Occhi: ${f.eyes.map((x, i) => (x ? `${i ? 'sinistro' : 'destro'} pupilla ${fx(x[0] * 255, 0)}, iride ${fx(x[1] * 255, 0)}, sclera ${x[2] == null ? '—' : fx(x[2] * 255, 0)}, palpebra ${fx(x[3] * 255, 0)}` : `${i ? 'sinistro' : 'destro'} non misurabile`)).join(' · ')}.` : +engine.o.eyeBoost ? 'Occhi: in attesa dei landmark (servono il rilevatore attivo e il volto in vista).' : 'Potenziamento occhi spento.');
+}
+function showMetrics(st) {
+  $('mean').textContent = fx(st.meanY, 1); $('rgb').textContent = `${st.meanR.toFixed(0)} / ${st.meanG.toFixed(0)} / ${st.meanB.toFixed(0)}`;
+  $('p95').textContent = st.p95; $('black').textContent = st.blackPct.toFixed(1) + '%'; $('hotpct').textContent = st.hotPct.toFixed(2) + '%';
+  $('sigma').textContent = st.active ? fx(st.sigmaRaw, 2) : '—'; $('nr').textContent = st.active ? '−' + fx(st.nrDb, 1) + ' dB' : '—';
+  $('still').textContent = st.active ? st.stillPct.toFixed(0) + '%' : '—';
+  const n = st.night || 0; $('night').textContent = engine.o.mode === 'manual' ? 'manuale' : n < 0.1 ? 'giorno' : n > 0.9 ? 'notte' : `${Math.round(n * 100)}% notte`;
+  $('tFilter').textContent = fx(tim.filter, 1) + ' ms'; $('tDet').textContent = ab.ready ? `${fx(tim.detA, 0)} / ${fx(tim.detB, 0)} ms` : '—';
+  $('fpsDms').textContent = ab.ready && tim.detB ? fx(Math.min(30, 1000 / (tim.filter + tim.detB / Math.max(1, +$('abStride').value || 1))), 1) : '—';
+  const b = $('bState'); b.textContent = st.active ? (engine.o.mode === 'manual' ? 'filtro manuale' : n < 0.1 ? 'filtro giorno' : n > 0.9 ? 'filtro notte' : 'filtro crepuscolo') : 'filtro disattivato'; b.className = 'badge ' + (st.active ? 'on' : 'off');
+  $('bFps').textContent = fps.toFixed(0) + ' FPS' + (ab.ready && ab.hz ? ` · ${ab.hz.all.toFixed(1)} ril/s` : ''); $('bMs').textContent = `${engine.kind.toUpperCase()} ${tim.filter.toFixed(1)} ms`;
+  $('bGain').textContent = st.active ? (st.flW > 0.999 ? 'guadagno: filtro volto' : `guadagno ${st.gain.toFixed(1)}× · γ ${st.gammaExp.toFixed(2)}`) : 'guadagno —';
+  showFaceLight(st);
+}
+
+/* ---------- Pilota automatico: esposizione sul volto e frequenza giorno/notte ---------- */
+const events = [];
+function logEvent(type, text, extra) {
+  const e = { time: new Date().toISOString(), type, text, ...(extra || {}) };
+  events.push(e); if (events.length > 3000) events.shift(); if (ab.trial) ab.trial.events.push(e);
+  $('pilotLog').textContent = `Ultimo intervento (${e.time.slice(11, 19)}): ${text}`;
+}
+function setRedDisplayIllumination(enabled) {
+  redDisplayIllumination = !!enabled;
+  $('redIllumination').style.display = redDisplayIllumination ? 'block' : 'none';
+  document.body.classList.toggle('red-illumination-on', redDisplayIllumination);
+  $('redIlluminationToggle').textContent = redDisplayIllumination ? 'Spegni fascia rossa' : 'Attiva fascia rossa';
+  $('redIlluminationToggle').setAttribute('aria-pressed', String(redDisplayIllumination));
+  $('redIlluminationState').textContent = 'Spenta · nessuna luce aggiuntiva'; if (redDisplayIllumination) applyRedBand();
+  logEvent('display-red', redDisplayIllumination ? 'Fascia rossa del display attivata' : 'Fascia rossa del display disattivata', { displayRed: redDisplayIllumination, displayRedSpec: RED_DISPLAY_SPEC });
+}
+$('redIlluminationToggle').addEventListener('click', () => setRedDisplayIllumination(!redDisplayIllumination));
+function applyRedBand() {
+  const h = +$('redH').value, k = +$('redK').value, rgb = [Math.round(255 * k), 0, 0];
+  document.documentElement.style.setProperty('--redH', h + 'cm'); document.documentElement.style.setProperty('--redC', `rgb(${rgb.join(',')})`);
+  RED_DISPLAY_SPEC.height = h + 'cm'; RED_DISPLAY_SPEC.rgb = rgb; RED_DISPLAY_SPEC.color = '#' + rgb.map(v => v.toString(16).padStart(2, '0')).join('');
+  if (redDisplayIllumination) $('redIlluminationState').textContent = `Accesa · ${h} cm · rosso ${Math.round(k * 100)}%`;
+}
+$('redH').onchange = () => { applyRedBand(); logEvent('red-band', `fascia rossa: ${$('redH').value} cm`, { redHeight: +$('redH').value }); };
+$('redK').onchange = () => { applyRedBand(); logEvent('red-band', `fascia rossa: intensità ${Math.round(100 * $('redK').value)}%`); };
+$('redAuto').onchange = () => logEvent('red-auto', `regolazione della fascia: ${$('redAuto').value === 'on' ? 'automatica' : 'manuale'}`);
+applyRedBand();
+const pilot = {
+  busy: false, next: 0, yAvg: null, hotAvg: 0, fpsNow: 30, fpsUseless: false, fpsTest: null, evOff: false, evFails: 0, ev: 0, nightSince: 0, daySince: 0, faceAt: -1e9, faceSince: 0, hadFace: false,
+  reset() { this.faceSince = 0; this.hadFace = false; this.evCeil = 2; this.evCeilUntil = 0; this.busy = false; this.next = 0; this.yAvg = null; this.hotAvg = 0; this.fpsNow = 30; this.fpsUseless = false; this.fpsTest = null; this.evOff = false; this.evFails = 0; this.ev = 0; this.nightSince = 0; this.daySince = 0; this.faceAt = -1e9; },
+  async setEV(next, why) {
+    this.busy = true;
+    try {
+      const c = track.getCapabilities().exposureCompensation;
+      await track.applyConstraints({ advanced: [{ exposureCompensation: next }] });
+      await new Promise(r => setTimeout(r, 600));
+      const got = track?.getSettings().exposureCompensation;
+      if (got == null || Math.abs(got - next) > Math.max(c.step || 0.2, 0.2)) { if (++this.evFails >= 2) { this.evOff = true; logEvent('ev-off', 'esposizione automatica sospesa: il driver non conferma la compensazione'); } }
+      else { this.evFails = 0; this.ev = got; logEvent('ev', `EV ${got > 0 ? '+' : ''}${got.toFixed(2)} (${why})`, { ev: got, meanY: this.yAvg, hotPct: this.hotAvg }); }
+    } catch (e) { this.evOff = true; logEvent('ev-off', `esposizione automatica sospesa: ${e.name}`); }
+    this.yAvg = null; this.hotAvg = engine.stats.hotPct;      // le medie ripartono dopo il cambio, per non decidere su dati vecchi
+    this.busy = false; this.next = performance.now() + 1000;
+  },
+  async setFps(v, why) {
+    this.busy = true; let ok = false;
+    try {
+      await applyFps(v);
+      await new Promise(r => setTimeout(r, 800));
+      this.fpsNow = v; ok = true; engine.reset(); logEvent('fps', `${v} FPS richiesti (${why})`, { fps: v });
+    } catch (e) { this.fpsUseless = true; this.fpsUselessAt = performance.now(); logEvent('fps-off', `frequenza automatica sospesa: ${e.name}`); }
+    this.busy = false; this.next = performance.now() + 500; return ok;
+  },
+  tick(st, t) {
+    const face = t - this.faceAt < 700;
+    if (face && !this.hadFace) this.faceSince = t;
+    this.hadFace = face;
+    if (face && t - this.faceSince < 700) { this.yAvg = null; this.hotAvg = st.hotPct; }     // volto appena trovato: la misura sta passando dal centro al volto
+    const sig = st.signal == null ? st.meanY : st.signal;
+    this.yAvg = this.yAvg == null ? sig : this.yAvg + 0.2 * (sig - this.yAvg); this.hotAvg += 0.2 * (st.hotPct - this.hotAvg);
+    if (!track || this.busy || t < this.next) return;
+    // a) un cambio di frequenza vale solo se porta davvero più luce: altrimenti si torna a 30
+    if (this.fpsTest) {
+      if (t < this.fpsTest.at) return;
+      const ratio = this.yAvg / Math.max(1, this.fpsTest.before); this.fpsTest = null;
+      if (ratio < 1.15) { this.fpsUseless = true; this.fpsUselessAt = t; this.setFps(30, `a 15 FPS la luminosità non aumenta (×${ratio.toFixed(2)})`); }
+      else logEvent('fps-ok', `15 FPS confermati: luminosità ×${ratio.toFixed(2)}`);
+      return;
+    }
+    // b) esposizione misurata sul volto: giù se è bruciato, su se è scuro
+    if ($('autoEV').value === 'on' && !this.evOff) {
+      const c = (track.getCapabilities?.() || {}).exposureCompensation;
+      if (!c) this.evOff = true;
+      else {
+        let d = 0, why = '';
+        if (face && t - this.faceSince > 1800) {
+          if (this.hotAvg > 5) { d = -(0.33 + Math.min(0.34, this.hotAvg / 60)); why = `volto bruciato al ${this.hotAvg.toFixed(0)}%`; }
+          else if (this.yAvg > 160) { d = -0.33; why = `volto troppo chiaro (${this.yAvg.toFixed(0)}/255)`; }
+          else if (this.yAvg < 70 && this.hotAvg < 1) { d = Math.min(0.67, Math.max(0.33, 0.5 * Math.log2(110 / Math.max(8, this.yAvg)))); why = `volto scuro (${this.yAvg.toFixed(0)}/255)`; }
+        } else if (!face && ab.ready && t - this.faceAt > 3000 && st.frameY < 50) { d = 0.5; why = 'buio e nessun volto: più esposizione per trovarlo'; }
+        if (d) {
+          const cur = track.getSettings().exposureCompensation ?? this.ev, stepEV = c.step || 0.33;
+          const next = Math.max(Math.max(c.min, -2), Math.min(Math.min(c.max, 2), Math.round((cur + d) / stepEV) * stepEV));
+          // dopo una riduzione per volto bruciato non si risale sopra quel valore per un minuto: con sole a tratti
+          // un volto può essere insieme «scuro in media» e «bruciato in una parte», e l'esposizione oscillava
+          if (d < 0 && this.hotAvg > 5) { this.evCeil = next; this.evCeilUntil = t + 60000; }
+          const blocked = d > 0 && t < (this.evCeilUntil || 0) && next > this.evCeil + 1e-3;
+          if (!blocked && Math.abs(next - cur) > 1e-3) { this.setEV(next, why); return; }
+        }
+      }
+    }
+    // c) frequenza: di notte 15 FPS per lasciare al sensore un'esposizione più lunga, di giorno 30
+    if (this.fpsUseless && t - this.fpsUselessAt > 120000) this.fpsUseless = false;
+    if ($('autoFps').value === 'on' && !this.fpsUseless) {
+      const dark = (st.night || 0) > 0.8 && st.frameY < 45, bright = (st.night || 0) < 0.3 || st.frameY > 70;     // buia tutta la scena, non solo il volto
+      this.nightSince = dark ? (this.nightSince || t) : 0; this.daySince = bright ? (this.daySince || t) : 0;
+      if (this.fpsNow === 30 && this.nightSince && t - this.nightSince > 3000) { const before = this.yAvg; this.setFps(15, 'notte').then(ok => { if (ok) this.fpsTest = { before, at: performance.now() + 3000 }; }); }
+      else if (this.fpsNow === 15 && this.daySince && t - this.daySince > 3000) this.setFps(30, 'giorno');
+    }
+  },
+  describe(st) {
+    const n = st.night || 0, light = !st.active ? 'filtro spento' : engine.o.mode === 'manual' ? 'filtro manuale' : n < 0.1 ? 'giorno' : n > 0.9 ? 'notte' : 'crepuscolo o volto in ombra';
+    const ev = track ? (track.getSettings().exposureCompensation ?? this.ev) : 0;
+    const det = !ab.ready ? (ab.loading ? 'rilevatore in caricamento' : 'rilevatore non caricato') : `rilevatore ${ab.delegate} ${tim.detB ? tim.detB.toFixed(0) + ' ms' : ''}`;
+    return `${light} · guadagno ${st.gain.toFixed(1)}× · EV ${ev > 0 ? '+' : ''}${(+ev).toFixed(1)}${this.evOff ? ' (non regolabile)' : ''} · ${this.fpsNow} FPS richiesti, ${fps.toFixed(0)} reali · ${det}`;
+  }
+};
+
+/* ---------- Guida: posizione del telefono e luce sul volto ---------- */
+// Soglie ricavate dalle prove sul telefono: con il volto di tre quarti (circa 40°) la misura degli occhi diventa
+// incerta; con la luce sul volto sotto 20 il volto si perde, intorno a 40 gli occhi aperti e chiusi si distinguono.
+const POSE = { yawOk: 20, yawBad: 30, pitchOk: 25, rollOk: 18, faceMin: 0.22, faceLow: 0.27, faceMax: 0.72 };
+const guide = {
+  pose: null, faceAt: -1e9, sig: null, hot: 0, pos: { state: 'none', title: '', hint: '' }, light: { state: 'none', title: '', hint: '' }, autoAt: 0,
+  reset() { this.pose = null; this.faceAt = -1e9; this.sig = null; this.hot = 0; this.autoAt = 0; },
+  update(lm, mat, t) {
+    if (!lm) return;
+    const X = i => lm[i].x, Y = i => lm[i].y, fw = Math.abs(X(454) - X(234)) * W / Math.min(W, H), cx = (X(234) + X(454)) / 2, cy = (Y(10) + Y(152)) / 2;
+    let yaw = null, pitch = null, roll = null;
+    if (mat) { const R = (i, j) => mat[j * 4 + i]; yaw = Math.atan2(-R(2, 0), Math.hypot(R(0, 0), R(1, 0))) * 57.3; pitch = Math.atan2(R(2, 1), R(2, 2)) * 57.3; roll = Math.atan2(R(1, 0), R(0, 0)) * 57.3; }
+    const n = { yaw, pitch, roll, fw, cx, cy }, p = this.pose, k = 0.35;
+    this.pose = !p || t - this.faceAt > 1500 ? n : Object.fromEntries(Object.keys(n).map(key => [key, n[key] == null || p[key] == null ? n[key] : p[key] + k * (n[key] - p[key])]));
+    this.faceAt = t;
+  },
+  tick(st, t, dt) {
+    const sig = st.signal == null ? st.meanY : st.signal, a = 1 - Math.exp(-dt / 0.8);
+    this.sig = this.sig == null ? sig : this.sig + a * (sig - this.sig); this.hot += a * (st.hotPct - this.hot);
+    // posizione
+    const P = this.pose, lost = t - this.faceAt > 1500;
+    if (!ab.ready) this.pos = { state: 'none', title: 'Posizione: rilevatore in caricamento', hint: 'Serve il rilevatore del volto per controllare la posizione.' };
+    else if (!P || lost) this.pos = { state: 'bad', title: 'Posizione: volto non trovato', hint: 'Inquadra il volto. Se è buio, controlla prima la luce.' };
+    else {
+      const y = Math.abs(P.yaw || 0), issues = [];
+      if (y > POSE.yawBad) issues.push(['bad', `volto molto di lato (${y.toFixed(0)}°): porta il telefono più di fronte al viso`]);
+      else if (y > POSE.yawOk) issues.push(['warn', `volto un po' di lato (${y.toFixed(0)}°): ruota il telefono verso il viso`]);
+      if (P.fw < POSE.faceMin) issues.push(['bad', 'volto troppo piccolo: avvicina il telefono']);
+      else if (P.fw < POSE.faceLow) issues.push(['warn', 'volto piccolo: avvicina un po\' il telefono']);
+      else if (P.fw > POSE.faceMax) issues.push(['warn', 'volto troppo vicino: allontana un po\' il telefono']);
+      if (P.cx < 0.2 || P.cx > 0.8 || P.cy < 0.15 || P.cy > 0.8) issues.push(['warn', 'volto vicino al bordo: centralo nell\'inquadratura']);
+      if (P.pitch != null && Math.abs(P.pitch) > POSE.pitchOk) issues.push(['warn', `telefono inclinato rispetto al viso (${Math.abs(P.pitch).toFixed(0)}°): orientalo verso gli occhi`]);
+      if (P.roll != null && Math.abs(P.roll) > POSE.rollOk) issues.push(['warn', `telefono storto (${Math.abs(P.roll).toFixed(0)}°): raddrizzalo`]);
+      const bad = issues.some(i => i[0] === 'bad');
+      this.pos = !issues.length ? { state: 'ok', title: 'Posizione corretta', hint: 'Volto di fronte, centrato e abbastanza grande.' }
+        : { state: bad ? 'bad' : 'warn', title: bad ? 'Posizione da correggere' : 'Posizione accettabile', hint: issues.map(i => i[1]).join(' · ') };
+    }
+    // luce sul volto: indicazioni per la luminosità del display e per la fascia
+    const tgt = +$('lightTarget').value, s0 = this.sig, where = !lost && P ? '' : ' (stima al centro, volto non trovato)', bandUp = redDisplayIllumination ? (+$('redH').value < 5 ? ' o alza la fascia rossa' : '') : ' o accendi la fascia rossa';
+    if (s0 == null) this.light = { state: 'none', title: 'Luce sul volto: —', hint: '—' };
+    else if (this.hot > 8) this.light = { state: 'bad', title: `Luce sul volto: troppa${where}`, hint: `Il ${this.hot.toFixed(0)}% del volto è bruciato: abbassa la luminosità del display${redDisplayIllumination ? ' o la fascia' : ''}.` };
+    else if (s0 < 20) this.light = { state: 'bad', title: `Luce sul volto: ${s0.toFixed(0)}, insufficiente${where}`, hint: `Alza la luminosità del display${bandUp}. Sotto 20 il volto si perde.` };
+    else if (s0 < tgt) this.light = { state: 'warn', title: `Luce sul volto: ${s0.toFixed(0)}, al limite per gli occhi${where}`, hint: `Il volto si trova, ma per distinguere occhi aperti e chiusi servono almeno ${tgt}: alza un po' la luminosità del display${bandUp}.` };
+    else this.light = { state: 'ok', title: `Luce sul volto: ${s0.toFixed(0)}, sufficiente${where}`, hint: s0 > 3 * tgt && redDisplayIllumination ? 'C\'è molta luce: la fascia rossa si può abbassare o spegnere.' : 'Sufficiente per leggere gli occhi.' };
+    // fascia regolata dall'applicazione (facoltativa): un passo ogni 3 s al massimo
+    if ($('redAuto').value === 'on' && running && t - this.autoAt > 3000) {
+      const h = +$('redH').value;
+      if (this.light.state === 'bad' && this.hot > 8 && redDisplayIllumination && h > 2) { this.setH(h - 1, 'volto bruciato'); this.autoAt = t; }
+      else if (s0 != null && s0 < tgt && this.hot < 2) { if (!redDisplayIllumination) { setRedDisplayIllumination(true); this.autoAt = t; } else if (h < 5) { this.setH(h + 1, `luce sul volto ${s0.toFixed(0)}, sotto ${tgt}`); this.autoAt = t; } }
+      else if (s0 != null && s0 > 2.5 * tgt && redDisplayIllumination && h > 2) { this.setH(h - 1, `luce sul volto ${s0.toFixed(0)}, abbondante`); this.autoAt = t; }
+    }
+  },
+  setH(h, why) { $('redH').value = String(h); applyRedBand(); logEvent('red-auto', `fascia rossa a ${h} cm (${why})`, { redHeight: h }); },
+  ok() { return { pos: this.pos.state === 'ok' ? 1 : 0, light: this.light.state === 'ok' ? 1 : 0, yaw: this.pose && this.pose.yaw != null && performance.now() - this.faceAt < 1500 ? Math.abs(this.pose.yaw) : null, fw: this.pose ? this.pose.fw : null, sig: this.sig }; },
+  show() {
+    const set = (k, o) => { $(k + 'Dot').className = 'dot ' + (o.state === 'none' ? '' : o.state); $(k + 'Title').textContent = o.title; $(k + 'Hint').textContent = o.hint; };
+    set('pos', this.pos); set('light', this.light);
+    const P = this.pose, f = (v, u) => (v == null ? '—' : Math.abs(v).toFixed(0) + u);
+    $('posVals').textContent = P ? `Rotazione ${f(P.yaw, '°')} · inclinazione ${f(P.pitch, '°')} · piega ${f(P.roll, '°')} · larghezza volto ${(P.fw * 100).toFixed(0)}% del lato corto` : 'Rotazione — · inclinazione — · piega — · larghezza volto —';
+    const cls = s => 'badge ' + (s === 'ok' ? 'on' : s === 'warn' ? 'off' : s === 'bad' ? 'bad' : '');
+    $('bPos').textContent = this.pos.state === 'ok' ? 'posizione ✓' : this.pos.state === 'none' ? 'posizione —' : 'posizione ✗'; $('bPos').className = cls(this.pos.state);
+    $('bLight').textContent = this.sig == null ? 'luce —' : `luce ${this.sig.toFixed(0)} ${this.light.state === 'ok' ? '✓' : this.hot > 8 ? '↓' : '↑'}`; $('bLight').className = cls(this.light.state);
+  }
+};
+const mean0 = a => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : null);
+function guideSummary(list) { const y = list.map(g => g.yaw).filter(v => v != null), w = list.map(g => g.fw).filter(v => v != null), s = list.map(g => g.sig).filter(v => v != null);
+  return { posOkPct: list.length ? 100 * mean0(list.map(g => g.pos)) : null, lightOkPct: list.length ? 100 * mean0(list.map(g => g.light)) : null, yawAbsMean: mean0(y), faceWidthMean: mean0(w), lightMean: mean0(s) }; }
+
+/* ---------- Prova A/B con MediaPipe Face Landmarker ---------- */
+const MP = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+const MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
+const R_EYE = [33, 160, 158, 133, 153, 144], L_EYE = [362, 385, 387, 263, 373, 380];
+// contorni completi (16 punti) e iridi per il potenziamento degli occhi del filtro
+const R_CONT = [33, 246, 161, 160, 159, 158, 157, 173, 133, 155, 154, 153, 145, 144, 163, 7], L_CONT = [263, 466, 388, 387, 386, 385, 384, 398, 362, 382, 381, 380, 374, 373, 390, 249];
+function eyesPx(lm) {
+  return [[R_CONT, 468], [L_CONT, 473]].map(([idx, ic]) => {
+    const cx = lm[ic].x * W, cy = lm[ic].y * H; let r = 0;
+    for (let k = 1; k <= 4; k++) r += Math.hypot(lm[ic + k].x * W - cx, lm[ic + k].y * H - cy);
+    return { contour: idx.map(i => [lm[i].x * W, lm[i].y * H]), iris: [cx, cy], r: Math.max(1.5, r / 4) };
+  });
+}
+const STABLE = [33, 133, 362, 263, 1, 4, 61, 291, 152, 10, 234, 454], EYES = [...R_EYE, ...L_EYE];
+const OUTLINE = [
+  [33, 160, 158, 133, 153, 144, 33], [362, 385, 387, 263, 373, 380, 362], [61, 40, 37, 0, 267, 270, 291, 321, 314, 17, 84, 91, 61],
+  [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109, 10]
+];
+const r3 = x => (x == null ? null : Math.round(x * 1000) / 1000);
+function flSummary(stats) {
+  const avg = f => { const v = stats.map(s => (s.fl && s.flW > 0.001 ? f(s.fl) : null)).filter(x => x != null && isFinite(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+  return { profile: engine.o.flProfile, eyeBoost: +engine.o.eyeBoost, strength: engine.o.flStrength, dayPct: stats.length ? 100 * stats.filter(s => s.flW > 0.5).length / stats.length : null,
+    back: avg(f => f.w.back), spot: avg(f => f.w.spot), neutral: avg(f => f.w.neutral), veil: avg(f => f.veil),
+    eyePIraw: avg(f => f.eyeRaw && f.eyeRaw.pi), eyePIflt: avg(f => f.eyeOut && f.eyeOut.pi), eyeISraw: avg(f => f.eyeRaw && f.eyeRaw.is), eyeISflt: avg(f => f.eyeOut && f.eyeOut.is) };
+}
+const ab = {
+  ready: false, loading: false, delegate: null, bench: null, pendingSave: null, det: [null, null], ts: 0,
+  A: { lm: null, prev: null, prevEar: null, ring: [], cropCanvas: null, crop: null, cropMiss: 0, cropMoves: 0, lastCropZoom: 1, lastCropUsed: false, lastCropFallback: false, cropFrames: 0, cropFallbacks: 0 },
+  B: { lm: null, prev: null, prevEar: null, ring: [], cropCanvas: null, crop: null, cropMiss: 0, cropMoves: 0, lastCropZoom: 1, lastCropUsed: false, lastCropFallback: false, cropFrames: 0, cropFallbacks: 0 },
+  agree: [], union: [], trial: null, eye: null, ac: null, lostFace: 99, lostEyes: 99,
+  resetArms() { for (const arm of [this.A, this.B]) { arm.lm = null; arm.prev = null; arm.prevEar = null; arm.ring = []; arm.crop = null; arm.cropMiss = 0; arm.cropMoves = 0; arm.lastCropZoom = 1; arm.lastCropUsed = false; arm.lastCropFallback = false; arm.cropFrames = 0; arm.cropFallbacks = 0; } this.agree = []; this.union = []; },
+  async load() {
+    if (this.ready || this.loading) return;
+    this.loading = true; $('abLoad').disabled = true; $('abStatus').textContent = 'Scaricamento del rilevatore…';
+    try {
+      const vision = await import(`${MP}/vision_bundle.mjs`);
+      const files = await vision.FilesetResolver.forVisionTasks(`${MP}/wasm`);
+      const model = new Uint8Array(await (await fetch(MODEL)).arrayBuffer());
+      const make = delegate => vision.FaceLandmarker.createFromOptions(files, { baseOptions: { modelAssetBuffer: model, delegate }, runningMode: $('abMode').value, numFaces: 1, outputFacialTransformationMatrixes: true });
+      // tempo medio di 6 rilevamenti sul video in corso (dopo 2 di riscaldamento)
+      const bench = d => { if (!running || video.readyState < 2) return null; const vid = $('abMode').value === 'VIDEO'; let t0 = 0;
+        try { for (let i = 0; i < 8; i++) { if (i === 2) t0 = performance.now(); this.ts = Math.max(this.ts + 1, Math.round(performance.now())); if (vid) d.detectForVideo(video, this.ts); else d.detect(video); } } catch (e) { return null; }
+        return (performance.now() - t0) / 6; };
+      const pref = (QS.get('delegate') || $('abDelegate').value).toUpperCase(); let first = null;
+      if (pref === 'AUTO') {
+        let g = null, c = null, tg = null, tc = null;
+        try { g = await make('GPU'); tg = bench(g); } catch (e) { g = null; }
+        try { c = await make('CPU'); tc = bench(c); } catch (e) { c = null; }
+        if (!g && !c) throw new Error('nessun motore di calcolo disponibile');
+        const useGpu = g && (!c || tg == null || tc == null || tg <= tc);
+        first = useGpu ? g : c; this.delegate = useGpu ? 'GPU' : 'CPU'; this.bench = { gpuMs: tg, cpuMs: tc };
+        try { (useGpu ? c : g)?.close(); } catch (e) { /* già chiuso */ }
+        if (tg != null && tc != null) logEvent('detector', `rilevatore su ${this.delegate}: GPU ${tg.toFixed(0)} ms, CPU ${tc.toFixed(0)} ms`, this.bench);
+      } else {
+        try { first = await make(pref); this.delegate = pref; } catch (e) { this.delegate = pref === 'GPU' ? 'CPU' : 'GPU'; first = await make(this.delegate); }
+      }
+      this.det = [first, await make(this.delegate)];
+      this.ready = true; $('abTrial').disabled = false; $('eyeTest').disabled = false; $('abLoad').textContent = 'Rilevatore caricato';
+      $('abStatus').textContent = `Rilevatore attivo su ${this.delegate}` + (this.bench && this.bench.gpuMs != null && this.bench.cpuMs != null ? ` (misurati: GPU ${this.bench.gpuMs.toFixed(0)} ms, CPU ${this.bench.cpuMs.toFixed(0)} ms per rilevamento).` : '.');
+    } catch (e) { $('abStatus').textContent = `Rilevatore non caricato: ${e.name}: ${e.message}`; $('abLoad').disabled = false; }
+    this.loading = false;
+  },
+  async setMode() { if (!this.ready) return; for (const d of this.det) await d.setOptions({ runningMode: $('abMode').value }); this.resetArms(); },
+  // Ritaglio del volto per il rilevatore. Il riquadro resta fermo finché il volto ci sta dentro: con il tracking
+  // attivo un riquadro che si sposta a ogni fotogramma fa perdere il volto, e il recupero a pieno fotogramma
+  // raddoppiava i rilevamenti (nelle prove sul telefono falliva dall'85 al 100% dei fotogrammi).
+  faceCrop(source, arm) {
+    const mode = $('faceZoom').value;
+    if (mode === 'off' || !source || !W || !H) { arm.crop = null; return null; }
+    const sw = source.videoWidth || source.naturalWidth || source.width || W, sh = source.videoHeight || source.naturalHeight || source.height || H;
+    if (arm.lm) {
+      let x0 = 1, y0 = 1, x1 = 0, y1 = 0;
+      for (const idx of OUTLINE[3]) { const p = arm.lm[idx]; if (!p) continue; x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+      const fw = x1 - x0, fh = y1 - y0;
+      if (!(fw > 0.02 && fh > 0.02)) { arm.crop = null; return null; }
+      const requested = mode === 'auto' ? Math.min(2.25, Math.max(1, 0.58 / fh)) : Math.max(1, Number(mode) || 1);
+      const zoom = Math.max(1, Math.min(requested, Math.min(1 / (fw * 1.28), 1 / (fh * 1.28))));      // il volto deve restare intero, con margine
+      const c = arm.crop, mx = 0.08 * fw, my = 0.08 * fh;
+      const inside = c && x0 - mx >= c.x && x1 + mx <= c.x + c.w && y0 - my >= c.y && y1 + my <= c.y + c.h;
+      if (zoom < 1.08) arm.crop = null;
+      else if (!inside || c.zoom > zoom * 1.25 || c.zoom < zoom * 0.8) {
+        const cw = 1 / zoom, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+        arm.crop = { x: Math.max(0, Math.min(1 - cw, cx - cw / 2)), y: Math.max(0, Math.min(1 - cw, cy - cw / 2)), w: cw, h: cw, zoom }; arm.cropMoves++;
+      }
+    }
+    const c = arm.crop; if (!c) return null;
+    const k = Math.min(1, 640 / Math.min(sw, sh)), cwp = Math.round(sw * k), chp = Math.round(sh * k);      // tela più piccola: copiare a piena risoluzione costa
+    const canvas = arm.cropCanvas || (arm.cropCanvas = document.createElement('canvas'));
+    if (canvas.width !== cwp || canvas.height !== chp) { canvas.width = cwp; canvas.height = chp; }
+    canvas.getContext('2d', { alpha: false }).drawImage(source, c.x * sw, c.y * sh, c.w * sw, c.h * sh, 0, 0, cwp, chp);
+    return { canvas, x: c.x, y: c.y, w: c.w, h: c.h, zoom: c.zoom };
+  },
+  detect(i, source) {
+    const arm = i === 0 ? this.A : this.B;
+    const run = input => $('abMode').value === 'VIDEO' ? this.det[i].detectForVideo(input, this.ts) : this.det[i].detect(input);
+    try {
+      const crop = this.faceCrop(source, arm);
+      arm.lastCropUsed = !!crop; arm.lastCropFallback = false; arm.lastCropZoom = crop ? crop.zoom : 1;
+      if (crop) arm.cropFrames++;
+      const r = run(crop ? crop.canvas : source), lm = r.faceLandmarks && r.faceLandmarks.length ? r.faceLandmarks[0] : null;
+      arm.mat = lm && r.facialTransformationMatrixes && r.facialTransformationMatrixes[0] ? r.facialTransformationMatrixes[0].data : null;      // posa della testa (la rotazione non cambia con il ritaglio)
+      if (!lm) {
+        // Nessun secondo rilevamento sullo stesso fotogramma: si riprova sul ritaglio, e dopo 3 mancati si torna al pieno fotogramma.
+        if (crop && ++arm.cropMiss >= 3) { arm.crop = null; arm.cropMiss = 0; arm.cropFallbacks++; arm.lastCropFallback = true; }
+        return null;
+      }
+      arm.cropMiss = 0;
+      return crop ? lm.map(p => ({ ...p, x: crop.x + p.x * crop.w, y: crop.y + p.y * crop.h, z: (p.z || 0) * crop.w })) : lm;
+    } catch (e) { arm.lastCropZoom = 1; arm.crop = null; return null; }
+  },
+  measure(arm, lm) {
+    const e = { det: !!lm, ear: null, ear1: null, ear2: null, dEar: null, mar: null, jit: null,
+      cropZoom: arm.lastCropZoom || 1, cropUsed: !!arm.lastCropUsed, cropFallback: !!arm.lastCropFallback };
+    if (!lm) { arm.lm = null; arm.prev = null; arm.prevEar = null; return e; }
+    const P = i => [lm[i].x * W, lm[i].y * H], dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+    const ear = idx => { const p = idx.map(P); return (dist(p[1], p[5]) + dist(p[2], p[4])) / (2 * dist(p[0], p[3]) + 1e-6); };
+    e.ear1 = ear(R_EYE); e.ear2 = ear(L_EYE); e.ear = (e.ear1 + e.ear2) / 2;
+    e.mar = dist(P(13), P(14)) / (dist(P(61), P(291)) + 1e-6);
+    const iod = dist(P(33), P(263)) + 1e-6, pts = STABLE.map(P);
+    if (arm.prev) { let s = 0; for (let k = 0; k < pts.length; k++) s += dist(pts[k], arm.prev[k]); e.jit = 100 * s / pts.length / iod; }
+    if (arm.prevEar != null) e.dEar = Math.abs(e.ear - arm.prevEar);
+    arm.prev = pts; arm.prevEar = e.ear; arm.lm = lm; arm.iod = iod;
+    return e;
+  },
+  /** Fotogramma senza rilevamento (cadenza 2×): solo tempi di prove e segnali della prova occhi; nessun dato registrato. */
+  idle(t) {
+    if (this.trial && this.trial.until - performance.now() <= 0) this.endTrial();
+    if (this.eye) this.eyeStep(null, null, null, t, true);
+  },
+  /** Rilevamenti al secondo negli ultimi 2 s (per ramo e totali). */
+  detRate(t, doA, doB) {
+    const q = this.detLog || (this.detLog = []); q.push([t, doA ? 1 : 0, doB ? 1 : 0]); while (q.length > 2 && t - q[0][0] > 2000) q.shift();
+    const span = (t - q[0][0]) / 1000; if (span <= 0.2) return;
+    let a = 0, b = 0; for (let i = 1; i < q.length; i++) { a += q[i][1]; b += q[i][2]; }
+    this.hz = { a: a / span, b: b / span, all: (q.length - 1) / span };
+  },
+  account(doA, la, doB, lb, t) {
+    this.detRate(t, doA, doB);
+    const ea = doA ? this.measure(this.A, la) : null, eb = doB ? this.measure(this.B, lb) : null;
+    let ag = null;
+    if (la && lb) { let s = 0; for (const i of STABLE) s += Math.hypot((la[i].x - lb[i].x) * W, (la[i].y - lb[i].y) * H); ag = 100 * s / STABLE.length / this.B.iod; }
+    if (ea) { this.A.ring.push(ea); if (this.A.ring.length > 60) this.A.ring.shift(); }
+    if (eb) { this.B.ring.push(eb); if (this.B.ring.length > 60) this.B.ring.shift(); }
+    if (doA && doB) { this.agree.push(ag); if (this.agree.length > 60) this.agree.shift(); this.union.push(la || lb ? 1 : 0); if (this.union.length > 60) this.union.shift(); }
+    if (this.trial) {
+      const T = this.trial, st = engine.stats; if (ea) T.a.push(ea); if (eb) T.b.push(eb); if (doA && doB) { T.agree.push(ag); T.union.push(la || lb ? 1 : 0); }
+      T.stats.push({ ...st, filterMs: tim.filter, detA: tim.detA, detB: tim.detB, fps }); T.guide.push(guide.ok());
+      T.frames.push([Math.round(t - T.t0), ea ? +ea.det : null, eb ? +eb.det : null, ea ? r3(ea.ear) : null, eb ? r3(eb.ear) : null, ea ? r3(ea.mar) : null, eb ? r3(eb.mar) : null, Math.round(st.meanY * 10) / 10, Math.round(st.gain * 100) / 100, Math.round((st.night || 0) * 100) / 100, Math.round(st.hotPct * 10) / 10, track ? track.getSettings().exposureCompensation ?? null : null, ea ? r3(ea.ear1) : null, ea ? r3(ea.ear2) : null, eb ? r3(eb.ear1) : null, eb ? r3(eb.ear2) : null, ea ? r3(ea.cropZoom) : null, eb ? r3(eb.cropZoom) : null, ea ? +ea.cropFallback : null, eb ? +eb.cropFallback : null]);
+      const left = T.until - performance.now();
+      if (left <= 0) this.endTrial(); else $('abTrial').textContent = `Prova in corso… ${Math.ceil(left / 1000)} s`;
+    }
+    if (this.eye) this.eyeStep(ea, eb, lb || la, t);
+    // zona di misura sul volto (o sulla fascia degli occhi): usa B, altrimenti A; torna al centro se il volto sparisce
+    const lm = lb || la, sel = $('roiMode').value;
+    if (lm) pilot.faceAt = t;
+    guide.update(lm, lb ? this.B.mat : la ? this.A.mat : null, t);
+    if (sel !== 'center') {
+      if (lm) {
+        let x0 = 1, y0 = 1, x1 = 0, y1 = 0; for (const i of (sel === 'eyes' ? EYES : OUTLINE[3])) { const p = lm[i]; if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x; if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y; }
+        if (sel === 'eyes') { const h = y1 - y0, w = x1 - x0; y0 -= 1.2 * h; y1 += 1.2 * h; x0 -= 0.08 * w; x1 += 0.08 * w; }   // la fascia degli occhi è sottile: si allarga alle lenti
+        const r = engine._roi, n = [x0, y0, x1, y1].map(v => Math.min(1, Math.max(0, v)));
+        engine.setROI(r ? r.map((v, k) => v + 0.25 * (n[k] - v)) : n); this.lostFace = 0;
+      } else if (++this.lostFace > 30) engine.setROI(null);
+    } else if (engine._roi) { engine.setROI(null); this.lostFace = 99; }
+    // occhi per il filtro (servono i 478 punti, con le iridi); spariti da qualche fotogramma → potenziamento che si spegne
+    if (lm && lm.length >= 478) { engine.setEyes(eyesPx(lm)); this.lostEyes = 0; } else if (++this.lostEyes > 8) engine.setEyes(null);
+  },
+  /* ----- Prova occhi guidata: chiusure a comando, con verità nota ----- */
+  beep(freq, n) {
+    try {
+      const ac = this.ac || (this.ac = new (window.AudioContext || window.webkitAudioContext)());
+      for (let i = 0; i < n; i++) { const o = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime + i * 0.24; o.frequency.value = freq; o.connect(g); g.connect(ac.destination); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.6, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18); o.start(t); o.stop(t + 0.2); }
+    } catch (e) { /* senza audio resta la vibrazione */ }
+    try { if (navigator.vibrate) navigator.vibrate(n === 1 ? 250 : [90, 90, 90]); } catch (e) { /* facoltativa */ }
+  },
+  startEyeTest() {
+    if (!this.ready || !running || this.trial || this.eye) return;
+    const now = performance.now(), phases = []; let t = now + 3500;
+    for (let c = 0; c < 5; c++) { phases.push({ from: t, to: t + 2000, closed: true, c }); t += 2000; phases.push({ from: t, to: t + 3000, closed: false, c }); t += 3000; }
+    this.eye = { t0: now, phases, idx: -2, end: t, frames: [], shots: [], guide: [], crop: null, burstPh: -9, burstN: 0, prevPair: $('abPair').value, started: new Date().toISOString(), stats: [] };
+    $('abPair').value = 'pair'; this.resetArms(); this.beep(660, 1);      // primo suono: sblocca l'audio e fa da prova
+    $('eyeStatus').textContent = 'Prova occhi: tieni gli occhi APERTI e aspetta il segnale acuto.'; $('eyeStatus').className = 'status'; $('eyeTest').textContent = 'Prova occhi in corso…';
+  },
+  eyeStep(ea, eb, lm, t, skip) {
+    const T = this.eye, ph = T.phases.findIndex(p => t >= p.from && t < p.to), p = ph >= 0 ? T.phases[ph] : null;
+    if (ph !== T.idx) { T.idx = ph; if (p) { this.beep(p.closed ? 880 : 440, p.closed ? 1 : 2); $('eyeStatus').textContent = p.closed ? `CHIUDI gli occhi (${p.c + 1} di 5)` : 'APRI gli occhi'; } }
+    if (skip) { if (t >= T.end) this.endEyeTest(); return; }      // fotogramma senza rilevamento: niente riga, i segnali restano puntuali
+    // i primi 0,7 s dopo ogni segnale sono il tempo di reazione: non contano né come aperti né come chiusi
+    const label = !p ? (t - T.t0 > 800 && t < T.phases[0].from ? 'open' : 'trans') : t - p.from < 700 ? 'trans' : p.closed ? 'closed' : 'open';
+    T.frames.push([Math.round(t - T.t0), label, p ? p.c : -1, p ? +p.closed : 0, p ? Math.round(t - p.from) : null, ea && ea.det ? r3(ea.ear) : null, eb && eb.det ? r3(eb.ear) : null]);
+    T.stats.push(engine.stats.signal == null ? engine.stats.meanY : engine.stats.signal); T.guide.push(guide.ok());
+    // raffica di 4 fotogrammi grezzi (ritaglio del volto) a metà di ogni fase, per rigiocarli fuori dal telefono
+    if (lm && !T.crop) { let x0 = 1, y0 = 1, x1 = 0, y1 = 0; for (const i of OUTLINE[3]) { const q = lm[i]; x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); }
+      const w = (x1 - x0) * 1.7, h = (y1 - y0) * 1.7, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, X = Math.max(0, cx - w / 2), Y = Math.max(0, cy - h / 2); T.crop = { x: X, y: Y, w: Math.min(1 - X, w), h: Math.min(1 - Y, h) }; }
+    if (p && T.crop && $('rawSeq').value !== '0' && t - p.from > 0.55 * (p.to - p.from)) { if (T.burstPh !== ph) { T.burstPh = ph; T.burstN = 0; } if (T.burstN < 4) grabCrop(T.shots, `${p.closed ? 'chiusi' : 'aperti'}_${p.c + 1}_f${T.burstN++}`, T.crop); }
+    if (t >= T.end) this.endEyeTest();
+  },
+  endEyeTest() {
+    const T = this.eye; this.eye = null; $('abPair').value = T.prevPair; $('eyeTest').textContent = 'Avvia prova occhi'; this.beep(660, 3);
+    const mean = a => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : null), sd = a => { const m = mean(a); return a.length > 1 ? Math.sqrt(mean(a.map(v => (v - m) * (v - m)))) : 0; };
+    const arm = col => {
+      const O = T.frames.filter(f => f[1] === 'open'), C = T.frames.filter(f => f[1] === 'closed'), ov = O.map(f => f[col]).filter(v => v != null), cv = C.map(f => f[col]).filter(v => v != null);
+      const r = { framesOpen: O.length, framesClosed: C.length, detOpenPct: O.length ? 100 * ov.length / O.length : null, detClosedPct: C.length ? 100 * cv.length / C.length : null, earOpen: mean(ov), earClosed: mean(cv), separation: null, threshold: null, openOkPct: null, closedOkPct: null, seen: 0, of: 5, lagMs: null };
+      if (ov.length < 3 || cv.length < 3) return r;
+      r.threshold = (r.earOpen + r.earClosed) / 2; r.separation = (r.earOpen - r.earClosed) / Math.sqrt((sd(ov) ** 2 + sd(cv) ** 2) / 2 + 1e-9);
+      if (r.earOpen <= r.earClosed) return r;      // nessuna distinzione: soglia senza senso
+      r.openOkPct = 100 * O.filter(f => f[col] != null && f[col] >= r.threshold).length / O.length; r.closedOkPct = 100 * C.filter(f => f[col] != null && f[col] < r.threshold).length / C.length;
+      const lags = []; for (let c = 0; c < 5; c++) { const hit = T.frames.find(f => f[2] === c && f[3] === 1 && f[col] != null && f[col] < r.threshold); if (hit) { r.seen++; lags.push(hit[4]); } }
+      r.lagMs = mean(lags); return r;
+    };
+    const A = arm(5), B = arm(6), pc = x => (x == null ? '—' : x.toFixed(0) + '%'), show = (k, r) => {
+      $(k + 'Det').textContent = `${pc(r.detOpenPct)} / ${pc(r.detClosedPct)}`; $(k + 'Open').textContent = fx(r.earOpen, 3); $(k + 'Closed').textContent = fx(r.earClosed, 3); $(k + 'Sep').textContent = fx(r.separation, 1);
+      $(k + 'Ok').textContent = `${pc(r.openOkPct)} / ${pc(r.closedOkPct)}`; $(k + 'Seen').textContent = `${r.seen} su ${r.of}`; $(k + 'Lag').textContent = r.lagMs == null ? '—' : (r.lagMs / 1000).toFixed(2) + ' s'; };
+    show('ea', A); show('eb', B);
+    const sig = mean(T.stats.filter(v => v != null)), cond = `${(engine.stats.night || 0) > 0.6 ? 'buio' : (engine.stats.night || 0) < 0.2 ? 'luce' : 'penombra'} · fascia rossa ${redDisplayIllumination ? 'accesa' : 'spenta'} · filtro ${engine.o.mode}`;
+    const verdict = B.seen > A.seen ? `il filtro vede più chiusure (${A.seen} → ${B.seen} su 5)` : B.seen < A.seen ? `il filtro vede meno chiusure (${A.seen} → ${B.seen} su 5)` : `stesse chiusure viste (${A.seen} su 5); separazione ${fx(A.separation, 1)} → ${fx(B.separation, 1)}`;
+    $('eyeStatus').textContent = `Prova occhi · ${cond} · ${verdict}.`; $('eyeStatus').className = 'status ' + (B.seen > A.seen ? 'ok' : B.seen < A.seen ? 'bad' : 'warn');
+    saveRecord('eye', { time: T.started, condition: cond, note: $('abNote').value, verdict, guide: guideSummary(T.guide), A, B, signal: sig, crop: T.crop, size: [W, H], video: [video.videoWidth, video.videoHeight], mode: $('abMode').value, delegate: this.delegate, engine: engine.info,
+      filter: { ...engine.o }, effective: engine.stats.eff, ui: uiState(), settings: track ? track.getSettings() : null, fps, frameColumns: ['ms', 'label', 'cycle', 'closedPhase', 'msFromCue', 'earA', 'earB'], frames: T.frames }, null, T.shots);
+  },
+  summary(list) {
+    const d = list.filter(e => e.det), mean = a => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : null);
+    const median = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; };
+    return { frames: list.length, detPct: list.length ? 100 * d.length / list.length : null,
+      ear: mean(d.map(e => e.ear)), ear1: mean(d.map(e => e.ear1)), ear2: mean(d.map(e => e.ear2)),
+      earNoise: median(d.filter(e => e.dEar != null).map(e => e.dEar)), mar: mean(d.map(e => e.mar)),
+      jitter: median(d.filter(e => e.jit != null).map(e => e.jit)), cropZoomMean: mean(list.filter(e => e.cropUsed).map(e => e.cropZoom)),
+      cropFrames: list.filter(e => e.cropUsed).length, cropFallbacks: list.filter(e => e.cropFallback).length };
+  },
+  show() {
+    if (!this.ready) return;
+    const a = this.summary(this.A.ring), b = this.summary(this.B.ring), ag = this.agree.filter(v => v != null);
+    $('abHA').textContent = $('abArmA').value === 'gain' ? 'A solo guadagno' : 'A grezza';
+    $('aDet').textContent = a.detPct == null ? '—' : a.detPct.toFixed(0) + '%'; $('bDet').textContent = b.detPct == null ? '—' : b.detPct.toFixed(0) + '%';
+    $('aJit').textContent = fx(a.jitter, 2); $('bJit').textContent = fx(b.jitter, 2);
+    $('aEar').textContent = fx(a.ear, 3); $('bEar').textContent = fx(b.ear, 3);
+    $('aEyes').textContent = `${fx(a.ear1, 3)} / ${fx(a.ear2, 3)}`; $('bEyes').textContent = `${fx(b.ear1, 3)} / ${fx(b.ear2, 3)}`;
+    $('aEarN').textContent = fx(a.earNoise, 3); $('bEarN').textContent = fx(b.earNoise, 3);
+    const z = $('faceZoom').value === 'auto' ? 'adattivo' : $('faceZoom').value === 'off' ? 'spento' : `${$('faceZoom').value}×`;
+    $('zoomStatus').textContent = `Zoom ${z} · A: ${fx(this.A.lastCropZoom, 2)}× (${this.A.cropFallbacks} recuperi) · B: ${fx(this.B.lastCropZoom, 2)}× (${this.B.cropFallbacks} recuperi)`;
+    $('aMar').textContent = fx(a.mar, 3); $('bMar').textContent = fx(b.mar, 3);
+    $('abAgree').textContent = ag.length ? fx(ag.reduce((s, v) => s + v, 0) / ag.length, 2) : '—';
+    $('abUnion').textContent = this.union.length ? (100 * this.union.reduce((s, v) => s + v, 0) / this.union.length).toFixed(0) + '%' : 'solo con A e B sullo stesso fotogramma';
+  },
+  draw(arm, dx, color) {
+    if (!this.ready || !arm.lm) return;
+    vctx.strokeStyle = color; vctx.lineWidth = 1.5; vctx.beginPath();
+    for (const path of OUTLINE) path.forEach((i, k) => { const p = arm.lm[i], x = dx + (mirror ? (1 - p.x) : p.x) * W, y = p.y * H; if (k) vctx.lineTo(x, y); else vctx.moveTo(x, y); });
+    vctx.stroke();
+  },
+  startTrial() {
+    if (!this.ready || !running || this.trial || this.eye) return;
+    this.resetArms();
+    this.trial = { t0: performance.now(), until: performance.now() + 1000 * +$('abDur').value, started: new Date().toISOString(), redDisplayAtStart: redDisplayIllumination, redDisplaySpec: RED_DISPLAY_SPEC, a: [], b: [], agree: [], union: [], stats: [], frames: [], events: [], guide: [], faceZoom: $('faceZoom').value, stride: +$('abStride').value || 1, burst: [], burstAt: performance.now() + 400 * +$('abDur').value };
+    $('abVerdict').textContent = 'Prova in corso: telefono appoggiato, volto fermo.'; $('abVerdict').className = 'status';
+  },
+  endTrial() {
+    const T = this.trial; this.trial = null; $('abTrial').textContent = 'Avvia prova';
+    const a = this.summary(T.a), b = this.summary(T.b), ag = T.agree.filter(v => v != null), on = T.stats.filter(s => s.active).length;
+    const avg = k => { const v = T.stats.filter(s => s[k] != null); return v.length ? v.reduce((s, x) => s + x[k], 0) / v.length : null; };
+    const dDet = b.detPct - a.detPct; let verdict, cls;
+    const armA = $('abArmA').value === 'gain' ? 'solo guadagno' : 'grezza', p = x => x.toFixed(0) + '%';
+    if (!on) { verdict = 'Filtro disattivato per tutta la prova: A e B hanno ricevuto la stessa immagine.'; cls = 'warn'; }
+    else if (dDet >= 10) { verdict = `Il filtro migliora il rilevamento: ${p(a.detPct)} → ${p(b.detPct)} dei fotogrammi.`; cls = 'ok'; }
+    else if (dDet <= -10) { verdict = `Il filtro peggiora il rilevamento: ${p(a.detPct)} → ${p(b.detPct)} dei fotogrammi.`; cls = 'bad'; }
+    else if (a.detPct < 10 && b.detPct < 10) { verdict = 'Volto non rilevato in nessuno dei due rami: segnale insufficiente anche dopo il filtro.'; cls = 'bad'; }
+    else if (a.jitter && b.jitter && Math.max(a.jitter, b.jitter) > 0.15 && b.jitter < 0.8 * a.jitter) { verdict = `Rilevamento simile (${p(a.detPct)} e ${p(b.detPct)}), landmark più stabili con il filtro: jitter ${a.jitter.toFixed(2)} → ${b.jitter.toFixed(2)}.`; cls = 'ok'; }
+    else if (a.jitter && b.jitter && Math.max(a.jitter, b.jitter) > 0.15 && b.jitter > 1.25 * a.jitter) { verdict = `Rilevamento simile (${p(a.detPct)} e ${p(b.detPct)}), landmark meno stabili con il filtro: jitter ${a.jitter.toFixed(2)} → ${b.jitter.toFixed(2)}.`; cls = 'bad'; }
+    else { verdict = `Nessuna differenza significativa: rilevamento ${p(a.detPct)} e ${p(b.detPct)}.`; cls = 'warn'; }
+    const fpsAvg = avg('fps'); if (fpsAvg && fpsAvg < 10) verdict += ` Attenzione: solo ${fpsAvg.toFixed(1)} FPS durante la prova.`;
+    const cond = `${(avg('night') || 0) > 0.6 ? 'buio' : (avg('night') || 0) < 0.2 ? 'luce' : 'penombra'} · fascia rossa ${T.redDisplayAtStart ? 'accesa' : 'spenta'}${redDisplayIllumination !== T.redDisplayAtStart ? ' (cambiata durante la prova)' : ''} · filtro ${engine.o.mode}`;
+    const rec = {
+      time: T.started, condition: cond, note: $('abNote').value, seconds: +$('abDur').value, redDisplayAtStart: T.redDisplayAtStart, redDisplaySpec: T.redDisplaySpec, armA, mode: $('abMode').value, pairing: $('abPair').value, delegate: this.delegate, detectorBench: this.bench, events: T.events,
+      engine: engine.info, guide: guideSummary(T.guide), A: a, B: b, unionPct: T.union.length ? 100 * T.union.reduce((s, v) => s + v, 0) / T.union.length : null, agreement: ag.length ? ag.reduce((s, v) => s + v, 0) / ag.length : null, verdict,
+      scene: { frameY: avg('frameY'), signal: avg('signal'), meanY: avg('meanY'), meanR: avg('meanR'), meanG: avg('meanG'), meanB: avg('meanB'), night: avg('night'), sigmaRaw: avg('sigmaRaw'), gain: avg('gain'), gammaExp: avg('gammaExp'), nrDb: avg('nrDb'), stillPct: avg('stillPct'), hotPct: avg('hotPct'), blackPct: avg('blackPct') },
+      timing: { fps: fpsAvg, filterMs: avg('filterMs'), detectAMs: avg('detA'), detectBMs: avg('detB'), stride: T.stride, detHzA: T.a.length / Math.max(0.5, (performance.now() - T.t0) / 1000), detHzB: T.b.length / Math.max(0.5, (performance.now() - T.t0) / 1000), cameraMinFps: camMinFps },
+      filter: { ...engine.o }, effective: engine.stats.eff, ui: uiState(), size: [W, H], video: [video.videoWidth, video.videoHeight], settings: track ? track.getSettings() : null,
+      faceZoom: T.faceZoom, crop: { A: { frames: this.A.cropFrames, fallbacks: this.A.cropFallbacks, moves: this.A.cropMoves }, B: { frames: this.B.cropFrames, fallbacks: this.B.cropFallbacks, moves: this.B.cropMoves } },
+      rawSequenceMs: T.burst.map(f => f.ms), faceLight: flSummary(T.stats),
+      frameColumns: ['ms', 'detA', 'detB', 'earA', 'earB', 'marA', 'marB', 'meanY', 'gain', 'night', 'hotPct', 'ev', 'ear1A', 'ear2A', 'ear1B', 'ear2B', 'cropZoomA', 'cropZoomB', 'cropFallbackA', 'cropFallbackB'], frames: T.frames
+    };
+    $('abVerdict').className = 'status ' + cls; $('abVerdict').textContent = verdict; rec.verdict = verdict; rec.conditionText = cond;
+    this.pendingSave = rec; this.pendingSeq = T.burst;      // salvata a fine fotogramma, così l'immagine include i landmark
+  }
+};
+
+/* ---------- Archivio (IndexedDB) e ZIP ---------- */
+const db = {
+  h: null,
+  open() { return new Promise(res => { try { const r = indexedDB.open('ir-insight', 1); r.onupgradeneeded = () => r.result.createObjectStore('records', { keyPath: 'id', autoIncrement: true }); r.onsuccess = () => { this.h = r.result; res(true); }; r.onerror = () => res(false); } catch (e) { res(false); } }); },
+  tx(mode, fn) { return new Promise(res => { if (!this.h) return res(null); try { const q = fn(this.h.transaction('records', mode).objectStore('records')); q.onsuccess = () => res(q.result); q.onerror = () => res(null); } catch (e) { res(null); } }); },
+  add(rec) { return this.tx('readwrite', s => s.add(rec)); },
+  all() { return this.tx('readonly', s => s.getAll()); },
+  clear() { return this.tx('readwrite', s => s.clear()); }
+};
+const count = kind => archive.filter(r => r.kind === kind).length;
+function archiveStatus(extra) { $('sampleStatus').textContent = (archive.length ? `Archivio: ${count('trial')} prove A/B, ${count('eye')} prove occhi e ${count('sample')} campioni` + (db.h ? ', salvati in questo browser.' : '. Salvataggio permanente non disponibile: esportare prima di chiudere.') : 'Archivio vuoto.') + (extra ? ' ' + extra : ''); }
+// Ritaglio grezzo (zona del volto) alla scala di elaborazione, in PNG, con un nome
+function grabCrop(list, name, c) {
+  const cv = document.createElement('canvas'), vw = video.videoWidth, vh = video.videoHeight; cv.width = Math.max(8, Math.round(c.w * W)); cv.height = Math.max(8, Math.round(c.h * H));
+  cv.getContext('2d').drawImage(video, c.x * vw, c.y * vh, c.w * vw, c.h * vh, 0, 0, cv.width, cv.height);
+  const slot = { name, png: null }; list.push(slot);
+  try { cv.toBlob(async b => { if (b) slot.png = new Uint8Array(await b.arrayBuffer()); }, 'image/png'); } catch (e) { /* senza ritaglio */ }
+}
+// Fotogramma grezzo alla risoluzione di elaborazione, in PNG (senza perdita: il JPEG altera rumore e canale rosso)
+const seqC = document.createElement('canvas'), seqX = seqC.getContext('2d');
+function grabRaw(list, ms) {
+  if (seqC.width !== W || seqC.height !== H) { seqC.width = W; seqC.height = H; }
+  seqX.drawImage(video, 0, 0, W, H);
+  const slot = { ms: Math.round(ms), png: null }; list.push(slot);
+  try { seqC.toBlob(async b => { if (b) slot.png = new Uint8Array(await b.arrayBuffer()); }, 'image/png'); } catch (e) { /* senza sequenza */ }
+}
+function grabView() { return new Promise(res => { try { view.toBlob(async b => res(b ? new Uint8Array(await b.arrayBuffer()) : null), 'image/jpeg', 0.82); } catch (e) { res(null); } }); }
+async function saveRecord(kind, data, seq, named) {
+  const rec = { kind, session: SESSION, data, img: await grabView() };
+  if (named && named.length) {
+    await new Promise(r => setTimeout(r, 600));
+    rec.named = named.filter(f => f.png).map(f => ({ name: f.name, png: f.png }));
+    const old = archive.filter(r => r.named && r.named.length); while (old.length >= 3) { const o = old.shift(); o.named = null; if (o.id != null) db.tx('readwrite', st => st.put(o)); }      // si tengono i ritagli delle ultime 3 prove occhi
+  }
+  if (seq && seq.length) {
+    await new Promise(r => setTimeout(r, 400));      // attesa della codifica PNG
+    rec.seq = seq.filter(f => f.png).map(f => f.png);
+    // le sequenze pesano (circa 3 MB per prova): si tengono solo quelle delle ultime 3 prove
+    const withSeq = archive.filter(r => r.seq && r.seq.length); while (withSeq.length >= 3) { const old = withSeq.shift(); old.seq = null; if (old.id != null) db.tx('readwrite', st => st.put(old)); }
+  }
+  data.index = count(kind) + 1; archive.push(rec); const id = await db.add(rec); if (id != null) rec.id = id; archiveStatus(); return data.index;
+}
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+/** ZIP senza compressione: [{ name, data: Uint8Array | string }] → Blob. */
+function makeZip(files) {
+  const enc = new TextEncoder(), parts = [], central = [], d = new Date();
+  const time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  let offset = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name), data = typeof f.data === 'string' ? enc.encode(f.data) : f.data, crc = crc32(data);
+    const head = new DataView(new ArrayBuffer(30));
+    head.setUint32(0, 0x04034b50, true); head.setUint16(4, 20, true); head.setUint16(6, 0x0800, true); head.setUint16(8, 0, true); head.setUint16(10, time, true); head.setUint16(12, date, true);
+    head.setUint32(14, crc, true); head.setUint32(18, data.length, true); head.setUint32(22, data.length, true); head.setUint16(26, name.length, true); head.setUint16(28, 0, true);
+    parts.push(head.buffer, name, data);
+    const cen = new DataView(new ArrayBuffer(46));
+    cen.setUint32(0, 0x02014b50, true); cen.setUint16(4, 20, true); cen.setUint16(6, 20, true); cen.setUint16(8, 0x0800, true); cen.setUint16(10, 0, true); cen.setUint16(12, time, true); cen.setUint16(14, date, true);
+    cen.setUint32(16, crc, true); cen.setUint32(20, data.length, true); cen.setUint32(24, data.length, true); cen.setUint16(28, name.length, true); cen.setUint32(42, offset, true);
+    central.push(cen.buffer, name); offset += 30 + name.length + data.length;
+  }
+  const csize = central.reduce((s, p) => s + p.byteLength, 0), end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true); end.setUint32(12, csize, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, end.buffer], { type: 'application/zip' });
+}
+const csv = rows => rows.map(r => r.map(v => (v == null ? '' : typeof v === 'number' ? +v.toFixed(4) : '"' + String(v).replace(/"/g, '""') + '"')).join(',')).join('\n');
+function uiState() { const o = {}; document.querySelectorAll('select[id],input[type=range][id]').forEach(el => { o[el.id] = el.value; }); o.redDisplayIllumination = redDisplayIllumination; o.redDisplaySpec = RED_DISPLAY_SPEC; return o; }
+function readDiag() {
+  diag = { time: new Date().toISOString(), userAgent: navigator.userAgent, screen: [screen.width, screen.height, devicePixelRatio], redDisplayIllumination, redDisplaySpec: RED_DISPLAY_SPEC, engine: engine ? engine.info : null, engineError: IRFilter.lastError || null,
+    filterVersion: IRFilter.VERSION, detectorDelegate: ab.delegate, detectorBench: ab.bench, device: track?.label, settings: track?.getSettings(), capabilities: track?.getCapabilities?.(), constraints: track?.getConstraints?.(), lastEV: diag?.lastEV || null, lastFps: diag?.lastFps || null };
+  return diag;
+}
+function exportZip() {
+  const trials = archive.filter(r => r.kind === 'trial'), samples = archive.filter(r => r.kind === 'sample'), eyes = archive.filter(r => r.kind === 'eye'), pad = i => String(i).padStart(3, '0');
+  const eRows = [['index', 'session', 'time', 'condition', 'note', 'signal', 'fps', 'posOkPct', 'lightOkPct', 'yawAbsMean', 'faceWidthMean', 'A_detOpenPct', 'A_detClosedPct', 'A_earOpen', 'A_earClosed', 'A_separation', 'A_openOkPct', 'A_closedOkPct', 'A_seen', 'A_lagMs', 'B_detOpenPct', 'B_detClosedPct', 'B_earOpen', 'B_earClosed', 'B_separation', 'B_openOkPct', 'B_closedOkPct', 'B_seen', 'B_lagMs', 'verdict']];
+  eyes.forEach(r => { const d = r.data, A = d.A, B = d.B; eRows.push([d.index, r.session, d.time, d.condition, d.note, d.signal, d.fps, d.guide?.posOkPct, d.guide?.lightOkPct, d.guide?.yawAbsMean, d.guide?.faceWidthMean, A.detOpenPct, A.detClosedPct, A.earOpen, A.earClosed, A.separation, A.openOkPct, A.closedOkPct, A.seen, A.lagMs, B.detOpenPct, B.detClosedPct, B.earOpen, B.earClosed, B.separation, B.openOkPct, B.closedOkPct, B.seen, B.lagMs, d.verdict]); });
+  const tRows = [['index', 'session', 'time', 'condition', 'unionPct', 'posOkPct', 'lightOkPct', 'yawAbsMean', 'faceWidthMean', 'note', 'seconds', 'displayRedAtStart', 'displayRedHeight', 'faceZoom', 'armA', 'mode', 'pairing', 'engine', 'delegate', 'framesA', 'framesB', 'A_detPct', 'B_detPct', 'A_jitter', 'B_jitter', 'A_ear', 'B_ear', 'A_ear1', 'A_ear2', 'B_ear1', 'B_ear2', 'A_cropZoomMean', 'B_cropZoomMean', 'A_cropFrames', 'B_cropFrames', 'A_cropFallbacks', 'B_cropFallbacks', 'A_earNoise', 'B_earNoise', 'A_mar', 'B_mar', 'agreement', 'meanY', 'night', 'sigmaRaw', 'gain', 'nrDb', 'stillPct', 'fps', 'filterMs', 'detectAMs', 'detectBMs', 'exposureCompensation', 'frameRate', 'verdict', 'FL_profile', 'FL_eyeBoost', 'FL_strength', 'FL_dayPct', 'FL_back', 'FL_spot', 'FL_neutral', 'FL_veil', 'eyePI_A', 'eyePI_B', 'eyeIS_A', 'eyeIS_B', 'detectorStride', 'detHzA', 'detHzB', 'cameraMinFps']];
+  trials.forEach(r => { const t = r.data, s = t.scene || {}, m = t.timing || {}; tRows.push([t.index, r.session, t.time, t.condition, t.unionPct, t.guide?.posOkPct, t.guide?.lightOkPct, t.guide?.yawAbsMean, t.guide?.faceWidthMean, t.note, t.seconds, t.redDisplayAtStart, t.redDisplaySpec?.height, t.faceZoom, t.armA, t.mode, t.pairing, t.engine?.engine, t.delegate, t.A.frames, t.B.frames, t.A.detPct, t.B.detPct, t.A.jitter, t.B.jitter, t.A.ear, t.B.ear, t.A.ear1, t.A.ear2, t.B.ear1, t.B.ear2, t.A.cropZoomMean, t.B.cropZoomMean, t.A.cropFrames, t.B.cropFrames, t.A.cropFallbacks, t.B.cropFallbacks, t.A.earNoise, t.B.earNoise, t.A.mar, t.B.mar, t.agreement, s.meanY, s.night, s.sigmaRaw, s.gain, s.nrDb, s.stillPct, m.fps, m.filterMs, m.detectAMs, m.detectBMs, t.settings?.exposureCompensation, t.settings?.frameRate, t.verdict, t.faceLight?.profile, t.faceLight?.eyeBoost, t.faceLight?.strength, t.faceLight?.dayPct, t.faceLight?.back, t.faceLight?.spot, t.faceLight?.neutral, t.faceLight?.veil, t.faceLight?.eyePIraw, t.faceLight?.eyePIflt, t.faceLight?.eyeISraw, t.faceLight?.eyeISflt, m.stride, m.detHzA, m.detHzB, m.cameraMinFps]); });
+  const sRows = [['index', 'session', 'time', 'note', 'displayRed', 'displayRedHeight', 'engine', 'active', 'meanY', 'meanR', 'meanG', 'meanB', 'night', 'p95', 'blackPct', 'hotPct', 'sigmaRaw', 'nrDb', 'stillPct', 'gain', 'gammaExp', 'fps', 'filterMs', 'exposureCompensation', 'exposureMode', 'frameRate', 'FL_profile', 'FL_weightDay', 'FL_back', 'FL_spot', 'FL_neutral', 'eyePI_A', 'eyePI_B', 'eyeIS_A', 'eyeIS_B']];
+  samples.forEach(r => { const s = r.data, st = s.stats; sRows.push([s.index, r.session, s.time, s.note, s.redDisplayIllumination, s.redDisplaySpec?.height, s.engine?.engine, st.active ? 1 : 0, st.meanY, st.meanR, st.meanG, st.meanB, st.night, st.p95, st.blackPct, st.hotPct, st.sigmaRaw, st.nrDb, st.stillPct, st.gain, st.gammaExp, s.fps, s.filterMs, s.settings?.exposureCompensation, s.settings?.exposureMode, s.settings?.frameRate, s.filter?.flProfile, st.flW, st.fl?.w.back, st.fl?.w.spot, st.fl?.w.neutral, st.fl?.eyeRaw?.pi, st.fl?.eyeOut?.pi, st.fl?.eyeRaw?.is, st.fl?.eyeOut?.is]); });
+  const files = [
+    { name: 'LEGGIMI.txt', data: `IR InSight Software ${IRFilter.VERSION} - archivio completo\nIlluminazione display: fascia rossa RGB 255,0,0, larga 100vw e alta 2cm; luminosita' del display da regolare a un livello confortevole.\nEsportato: ${new Date().toISOString()}\n\nprove.csv / prove.json      tutte le prove A/B di tutte le sessioni (il JSON contiene anche parametri, impostazioni della fotocamera e la serie per fotogramma)\ncampioni.csv / campioni.json  tutti i campioni registrati\nparametri.json              parametri del filtro e stato dei controlli al momento dell'esportazione, con i valori predefiniti\ndispositivo.json            browser, fotocamera, capacita' del driver, motore grafico\neventi.csv                  interventi automatici di questa sessione (esposizione, frequenza, rilevatore, zoom volto)\nIl campo faceZoom indica off, 1.5, 2 oppure auto. Il ritaglio è applicato soltanto all'ingresso del rilevatore; IRFilter e il flusso video originale restano invariati. I fallback indicano quante volte il rilevatore ha riprovato sull'intero fotogramma.\nimmagini/                   anteprima salvata alla fine di ogni prova e per ogni campione\nocchi.csv / occhi.json      prove occhi guidate: EAR a occhi aperti e chiusi, chiusure viste, ritardo; in occhi/ i ritagli grezzi del volto\nsequenze/prova_NNN/         fotogrammi grezzi consecutivi (PNG senza perdita) delle ultime 3 prove, per rigiocarli fuori dal telefono\nFiltri volto (FL_*): profilo scelto, quota di giorno, pesi medi controluce / luce puntata / normale, velo medio sul volto; eyePI/eyeIS = contrasto pupilla-iride e iride-sclera in livelli su 255, A sul grezzo e B sul filtrato\ndetectorStride = cadenza del rilevatore (1 = ogni fotogramma, 2 = uno su due); detHzA/detHzB = rilevamenti al secondo per ramo; cameraMinFps = 20 se il driver ha accettato il minimo, 0 se no. L'esposizione non e' mai manuale\n\nProve: ${trials.length} - Campioni: ${samples.length}\n` },
+    { name: 'prove.csv', data: csv(tRows) }, { name: 'prove.json', data: JSON.stringify(trials.map(r => ({ session: r.session, ...r.data })), null, 1) },
+    { name: 'occhi.csv', data: csv(eRows) }, { name: 'occhi.json', data: JSON.stringify(eyes.map(r => ({ session: r.session, ...r.data })), null, 1) },
+    { name: 'campioni.csv', data: csv(sRows) }, { name: 'campioni.json', data: JSON.stringify(samples.map(r => ({ session: r.session, ...r.data })), null, 1) },
+    { name: 'parametri.json', data: JSON.stringify({ version: IRFilter.VERSION, exported: new Date().toISOString(), session: SESSION, filter: engine ? { ...engine.o } : readOpts(true), effective: engine?.stats.eff || null, defaults: IRFilter.DEFAULTS, ui: uiState() }, null, 1) },
+    { name: 'dispositivo.json', data: JSON.stringify(readDiag(), null, 1) },
+    { name: 'eventi.csv', data: csv([['time', 'type', 'text', 'ev', 'fps', 'meanY', 'hotPct'], ...events.map(e => [e.time, e.type, e.text, e.ev, e.fps, e.meanY, e.hotPct])]) }
+  ];
+  trials.forEach(r => { if (r.img) files.push({ name: `immagini/prova_${pad(r.data.index)}.jpg`, data: r.img }); });
+  eyes.forEach(r => { if (r.img) files.push({ name: `immagini/occhi_${pad(r.data.index)}.jpg`, data: r.img }); (r.named || []).forEach(f => files.push({ name: `occhi/prova_${pad(r.data.index)}/${f.name}.png`, data: f.png })); });
+  trials.forEach(r => (r.seq || []).forEach((png, k) => files.push({ name: `sequenze/prova_${pad(r.data.index)}/f${String(k).padStart(2, '0')}.png`, data: png })));
+  samples.forEach(r => { if (r.img) files.push({ name: `immagini/campione_${pad(r.data.index)}.jpg`, data: r.img }); });
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+  download(`IR_InSight_archivio_${stamp}.zip`, makeZip(files));
+  archiveStatus(`ZIP esportato: ${files.length} file.`);
+}
+
+/* ---------- Controlli ---------- */
+const RANGES = { flStrength: v => (+v).toFixed(2), temporal: v => (v == 1 ? 'disattivata' : 'fino a ' + v + ' fotogrammi'), motionK: v => (+v).toFixed(1) + ' σ', target: v => (+v).toFixed(2), maxGain: v => v + '×', gamma: v => (+v).toFixed(1), gain: v => (+v).toFixed(1) + '×', clahe: v => (+v).toFixed(1), claheDay: v => (+v).toFixed(1), sharpen: v => (+v).toFixed(1), sharpenNight: v => (+v).toFixed(1), targetNight: v => (+v).toFixed(2), maxGainNight: v => v + '×', hot: v => v, nightY: v => v, dayY: v => v };
+const SELECTS = ['mode', 'tone', 'channel', 'spatial', 'color', 'flProfile', 'eyeBoost'];
+function readOpts(only) {
+  const o = {};
+  for (const id in RANGES) { o[id] = +$(id).value; $(id + 'V').textContent = RANGES[id]($(id).value); }
+  for (const id of SELECTS) o[id] = id === 'spatial' || id === 'color' || id === 'eyeBoost' ? +$(id).value : $(id).value;
+  if (o.dayY <= o.nightY + 5) o.dayY = o.nightY + 5;
+  const manual = o.tone === 'manual'; $('gamma').disabled = $('gain').disabled = !manual; $('target').disabled = $('maxGain').disabled = manual;
+  if (only !== true && engine) engine.set(o);
+  return o;
+}
+for (const id in RANGES) $(id).oninput = readOpts;
+for (const id of SELECTS) $(id).onchange = () => { readOpts(); if (engine && (id === 'channel' || id === 'mode' || id === 'flProfile')) engine.reset(); if (id === 'flProfile' || id === 'eyeBoost') logEvent('face-light', `filtro volto: ${$('flProfile').selectedOptions[0].textContent} · ${$('eyeBoost').selectedOptions[0].textContent}`); };
+$('reset').onclick = () => { const D = IRFilter.DEFAULTS; for (const id in RANGES) $(id).value = D[id]; for (const id of SELECTS) $(id).value = D[id]; $('roiMode').value = 'face'; $('autoEV').value = 'on'; $('autoFps').value = 'on'; pilot.evOff = false; pilot.fpsUseless = false; readOpts(); if (engine) engine.reset(); };
+readOpts(true);
+
+$('start').onclick = start; $('stop').onclick = stop;
+$('engineSel').onchange = () => { QS.delete('engine'); makeEngine(); if (running) status(`Motore ${engine.kind.toUpperCase()} (${engine.info.renderer}) · ${W}×${H}`); };
+$('procW').onchange = () => { if (running) sizeCanvases(); };
+$('freeze').onclick = () => { frozen = !frozen; $('freeze').textContent = frozen ? 'Sblocca fotogramma' : 'Blocca fotogramma'; };
+$('save').onclick = () => view.toBlob(b => b && download('IR_InSight_0_10_1.png', b));
+$('abStride').onchange = () => { ab.resetArms(); logEvent('stride', `cadenza del rilevatore: ${$('abStride').value}×`); };
+$('abLoad').onclick = () => ab.load(); $('abMode').onchange = () => ab.setMode(); $('abArmA').onchange = () => ab.resetArms(); $('abPair').onchange = () => ab.resetArms();
+$('faceZoom').onchange = () => { ab.resetArms(); $('zoomStatus').textContent = `Zoom selezionato: ${$('faceZoom').selectedOptions[0].textContent}. Il tracking ripartirà a pieno fotogramma.`; logEvent('face-zoom', `Modalità zoom volto: ${$('faceZoom').value}`); };
+$('abTrial').onclick = () => ab.startTrial(); $('eyeTest').onclick = () => ab.startEyeTest();
+$('autoEV').onchange = () => { pilot.evOff = false; pilot.evFails = 0; }; $('autoFps').onchange = () => { pilot.fpsUseless = false; };
+
+async function setEV(ev) {
+  if (!track) { $('evstatus').textContent = 'Avvia prima la fotocamera'; return; }
+  try {
+    const caps = track.getCapabilities?.() || {};
+    if (!caps.exposureCompensation) { $('evstatus').textContent = 'Compensazione EV non esposta dal browser'; return; }
+    $('autoEV').value = 'off';      // una scelta manuale sospende l'EV automatico
+    const v = Math.max(caps.exposureCompensation.min, Math.min(caps.exposureCompensation.max, ev));
+    await track.applyConstraints({ advanced: [{ exposureCompensation: v }] });
+    await new Promise(r => setTimeout(r, 1400));
+    const s = track.getSettings();
+    $('evstatus').textContent = `Richiesto ${v} EV · effettivo ${s.exposureCompensation ?? 'non dichiarato'} · esposizione ${s.exposureMode || 'non dichiarata'} · EV automatico sospeso`;
+    diag = { ...(diag || {}), lastEV: { requested: v, actual: s.exposureCompensation ?? null, time: new Date().toISOString() } };
+  } catch (e) { $('evstatus').textContent = `Non applicato: ${e.name}: ${e.message}`; }
+}
+async function setFps(v) {
+  if (!track) { $('evstatus').textContent = 'Avvia prima la fotocamera'; return; }
+  try {
+    $('autoFps').value = 'off';      // una scelta manuale sospende la frequenza automatica
+    await applyFps(v);
+    await new Promise(r => setTimeout(r, 1200));
+    const s = track.getSettings();
+    $('evstatus').textContent = `Richiesti ${v} FPS · dichiarati ${s.frameRate ? s.frameRate.toFixed(1) : 'non dichiarati'} · misurati ${fps.toFixed(1)} · esposizione ${s.exposureMode || 'non dichiarata'}${s.exposureTime ? ' · tempo ' + s.exposureTime : ''}`;
+    diag = { ...(diag || {}), lastFps: { requested: v, actual: s.frameRate ?? null, measured: fps, time: new Date().toISOString() } };
+    engine.reset(); pilot.fpsNow = v;
+  } catch (e) { $('evstatus').textContent = `Frequenza non applicata: ${e.name}: ${e.message}`; }
+}
+document.querySelectorAll('[data-ev]').forEach(b => { b.onclick = () => setEV(+b.dataset.ev); });
+document.querySelectorAll('[data-fps]').forEach(b => { b.onclick = () => setFps(+b.dataset.fps); });
+
+$('snapshot').onclick = () => {
+  if (!running || !track) return;
+  saveRecord('sample', { time: new Date().toISOString(), note: $('abNote').value, redDisplayIllumination, redDisplaySpec: RED_DISPLAY_SPEC, engine: engine.info, stats: { ...engine.stats }, fps, filterMs: tim.filter, size: [W, H], filter: { ...engine.o }, ui: uiState(), settings: track.getSettings(),
+    ab: ab.ready ? { armA: $('abArmA').value, mode: $('abMode').value, A: ab.summary(ab.A.ring), B: ab.summary(ab.B.ring) } : null });
+};
+let clearArmed = 0;
+$('clear').onclick = async () => {
+  if (!archive.length) return;
+  if (Date.now() - clearArmed > 5000) { clearArmed = Date.now(); $('clear').textContent = `Conferma: elimina ${archive.length} registrazioni`; setTimeout(() => { $('clear').textContent = 'Svuota archivio'; }, 5000); return; }
+  clearArmed = 0; archive = []; await db.clear(); $('clear').textContent = 'Svuota archivio'; archiveStatus();
+};
+$('diag').onclick = () => { $('report').textContent = JSON.stringify(readDiag(), null, 2); };
+$('zip').onclick = exportZip;
+window.addEventListener('pagehide', () => stop(true));
+db.open().then(async ok => { if (ok) archive = (await db.all()) || []; archiveStatus(); });
+window.__ir = { eyesPx, pilot, guide, events, get engine() { return engine; }, get archive() { return archive; }, get ab() { return ab; }, get frameNo() { return frameNo; }, get fps() { return fps; }, tim, makeZip };
+})();
+</script></body></html>
